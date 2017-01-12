@@ -573,37 +573,43 @@ int main(int argc, char** argv)
         case MS_COMMAND:
         case MS_MESSAGE:
           switch (readInput(&inputbuf[0], &inputsiz, absiz, key, 0)) {
+            case 27:
+              state = MS_DEFAULT;
+              readInput(&inputbuf[0], &inputsiz, absiz, 0, I_CLEARBUF);
+              break;
             case '\n':
-              if (state == MS_MESSAGE) {
+              if (strnlen(inputbuf, inputsiz) > 0) {
+                if (state == MS_MESSAGE) {
 #ifdef _HAS_MSG
-                printf("\33[2K\rSending message(%lu): %s\n", (long unsigned int)inputsiz, inputbuf);
-                if (write_msg(inputbuf) != 0)
-                  printf("Sending failed.\n");
+                  printf("\33[2K\rSending message(%lu): %s\n", (long unsigned int)inputsiz, inputbuf);
+                  if (write_msg(inputbuf) != 0)
+                    printf("Sending failed.\n");
 #endif
-              } else if (state == MS_COMMAND) {
+                } else if (state == MS_COMMAND) {
 #ifdef _HAS_CMD
-                int inputFail = 0;
-                if (inputsiz < 3) {
-                  inputFail++;
-                } else {
-                  char* endptr = NULL;
-                  unsigned long int tmpi = strtoul(inputbuf, &endptr, 10);
-                  if (*endptr == ' ') {
-                    endptr++;
-                    printf("\33[2K\rExec CMD #%lu with args: %s\n", tmpi, endptr);
-                    int retval;
-                    switch ( (retval = exec_cmd(tmpi, endptr, strlen(endptr))) ) {
-                      case -7: printf("unknown cmd #%lu\n", tmpi); break;
-                      case -6: printf("fork error cmd #%lu\n", tmpi); break;
-                      case -5: printf("execute cmd #%lu\n", tmpi); break;
+                  int inputFail = 0;
+                  if (inputsiz < 3) {
+                    inputFail++;
+                  } else {
+                    char* endptr = NULL;
+                    unsigned long int tmpi = strtoul(inputbuf, &endptr, 10);
+                    if (*endptr == ' ') {
+                      endptr++;
+                      printf("\33[2K\rExec CMD #%lu with args: %s\n", tmpi, endptr);
+                      int retval;
+                      switch ( (retval = exec_cmd(tmpi, endptr, strlen(endptr))) ) {
+                        case -7: printf("unknown cmd #%lu\n", tmpi); break;
+                        case -6: printf("fork error cmd #%lu\n", tmpi); break;
+                        case -5: printf("execute cmd #%lu\n", tmpi); break;
 
-                      case 0: break;
-                      default: printf("Something went wrong, child returned: %d\n", retval); break;
-                    }
-                  } else inputFail++;
+                        case 0: break;
+                        default: printf("Something went wrong, child returned: %d\n", retval); break;
+                      }
+                    } else inputFail++;
+                  }
+                  if (inputFail > 0)
+                    printf("\33[2K\rFORMAT: [cmd#] [params]\n");
                 }
-                if (inputFail > 0)
-                  printf("\33[2K\rFORMAT: [cmd#] [params]\n");
 #endif
               }
               state = MS_DEFAULT;
