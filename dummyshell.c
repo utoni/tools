@@ -529,31 +529,33 @@ int main(int argc, char** argv)
   fd_set fds;
   time_t start = time(NULL);
   time_t cur;
-  unsigned char mins = 0, hrs = 0, doOnce = 1;
+  unsigned char mins = 0, hrs = 0, doOnce = 1, prevBufEmpty = 0;
   while (doLoop > 0) {
     cur = time(NULL);
     double diff = difftime(cur, start);
 #if defined(_HAS_UTMP) || defined(_HAS_SYSINFO)
-    if ((unsigned int)diff % 60 == 0 && doOnce) {
-      if (diff != 0 && ++mins == 60) {
-        mins = 0;
-        hrs++;
-      }
-      struct tm localtime;
-      if (localtime_r(&cur, &localtime) != NULL) {
-        printf("\33[2K\r--- %02d:%02d:%02d ---\n", localtime.tm_hour, localtime.tm_min, localtime.tm_sec);
-      }
+    if ((unsigned int)diff % 60 == 0) {
+      if (doOnce) {
+        if (diff != 0 && ++mins == 60) {
+          mins = 0;
+          hrs++;
+        }
+        struct tm localtime;
+        if (localtime_r(&cur, &localtime) != NULL) {
+          printf("\33[2K\r--- %02d:%02d:%02d ---\n", localtime.tm_hour, localtime.tm_min, localtime.tm_sec);
+        }
 #ifdef _HAS_UTMP
-      print_utmp();
+        print_utmp();
 #endif
 #ifdef _HAS_HOSTENT
-      print_nethost();
+        print_nethost();
 #endif
 #ifdef _HAS_SYSINFO
-      print_memusage();
-      print_cpuusage();
+        print_memusage();
+        print_cpuusage();
 #endif
-      doOnce = 0;
+        doOnce = 0;
+      }
     } else doOnce = 1;
 #endif
 #ifdef _HAS_MSG
@@ -611,8 +613,14 @@ int main(int argc, char** argv)
         case MS_MESSAGE:
           switch (readInput(&inputbuf[0], &inputsiz, absiz, key, 0)) {
             case 127:
-              if (strnlen(inputbuf, inputsiz) > 0)
+              if (inputsiz > 0) {
+                prevBufEmpty=0;
                 break;
+              } else if (!prevBufEmpty) {
+                prevBufEmpty=1;
+                break;
+              }
+              prevBufEmpty=0;
             case 27:
               state = MS_DEFAULT;
               readInput(&inputbuf[0], &inputsiz, absiz, 0, I_CLEARBUF);
