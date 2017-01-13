@@ -219,7 +219,7 @@ static int init_msg(void)
       fprintf(stderr, "file (`%s`) mode should be 0664\n", MSGFILE);
       return -1;
     }
-  } else return -1;
+  } else if (errno != ENOENT) return -1;
   msgfd = open(MSGFILE, O_RDWR | O_CREAT | O_APPEND | O_DSYNC | O_RSYNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
   if (msgfd < 0) {
     fprintf(stderr, "fopen(\"%s\") with write access: %s\n", MSGFILE, strerror(errno));
@@ -229,6 +229,7 @@ static int init_msg(void)
       return -2;
     }
   }
+  chmod(MSGFILE, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
   return 0;
 }
 
@@ -528,12 +529,12 @@ int main(int argc, char** argv)
   fd_set fds;
   time_t start = time(NULL);
   time_t cur;
-  unsigned char mins = 0, hrs = 0;
+  unsigned char mins = 0, hrs = 0, doOnce = 1;
   while (doLoop > 0) {
     cur = time(NULL);
     double diff = difftime(cur, start);
 #if defined(_HAS_UTMP) || defined(_HAS_SYSINFO)
-    if ((unsigned int)diff % 60 == 0) {
+    if ((unsigned int)diff % 60 == 0 && doOnce) {
       if (diff != 0 && ++mins == 60) {
         mins = 0;
         hrs++;
@@ -552,14 +553,15 @@ int main(int argc, char** argv)
       print_memusage();
       print_cpuusage();
 #endif
-    }
+      doOnce = 0;
+    } else doOnce = 1;
 #endif
 #ifdef _HAS_MSG
     while (print_msg() == 0) {}
 #endif
     switch (state) {
       case MS_DEFAULT:
-        printf("\r--- %02d:%02d:%02d ---%s", hrs, mins, ((unsigned int)diff % 60), keymsg);
+        printf("\33[2K\r--- %02d:%02d:%02d ---%s", hrs, mins, ((unsigned int)diff % 60), keymsg);
         break;
       case MS_MESSAGE:
       case MS_COMMAND:

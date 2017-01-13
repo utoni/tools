@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations
+CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
 LDFLAGS :=
 RM := rm -rf
 LIBS := -lcurses
@@ -48,6 +48,9 @@ xidle: xidle.o
 	@echo 'Finished building target: $@'
 	@echo ' '
 
+strip:
+	strip -s $(TARGETS)
+
 clean:
 	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o xidle.o
 	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d xidle.d
@@ -56,4 +59,4 @@ clean:
 
 rebuild: clean all
 
-.PHONY: all clean
+.PHONY: all clean strip
