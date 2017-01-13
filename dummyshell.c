@@ -608,6 +608,9 @@ int main(int argc, char** argv)
         case MS_COMMAND:
         case MS_MESSAGE:
           switch (readInput(&inputbuf[0], &inputsiz, absiz, key, 0)) {
+            case 127:
+              if (strnlen(inputbuf, inputsiz) > 0)
+                break;
             case 27:
               state = MS_DEFAULT;
               readInput(&inputbuf[0], &inputsiz, absiz, 0, I_CLEARBUF);
