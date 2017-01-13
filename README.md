@@ -21,5 +21,9 @@ suidcmd.c
 ========
 Run arbitrary commands (useful for running non-suid programs on non-suid fs).<br />
 
+xidle.c
+========
+Report XServer idle time (no cursor movement).<br />
+
 <br />
 Thats all folks.<br />
