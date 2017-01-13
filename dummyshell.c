@@ -27,6 +27,7 @@
 #ifdef _HAS_MSG
 #include <errno.h>
 #include <string.h>
+#include <sys/stat.h>
 #else
 #warning "MESSAGE(_HAS_MSG) disabled!"
 #endif
@@ -105,16 +106,21 @@ static char readInput(char* buf, size_t* siz, size_t szMax, char key, int flags)
 }
 
 #ifdef _HAS_CMD
+#define NO_ARGS   0b00000001
+#define NEED_ARGS 0b00000010
 struct __attribute__((__packed__)) cmd {
   char* name;
   char* path;
   char* defargs;
+  unsigned char flags;
 };
 
 static struct cmd cmds[] = {
-  { "ether-wake", "/var/media/ftp/bin/suid-ether-wake", "-b -i lan" },
-  { "echo", "/bin/echo", NULL },
-  { NULL, NULL, NULL }
+  { "ether-wake", "/var/media/ftp/bin/suid-ether-wake", "-b -i lan", NEED_ARGS },
+  { "netstat-client", "/bin/netstat", "-pntu", NO_ARGS },
+  { "netstat-server", "/bin/netstat", "-lpn", NO_ARGS },
+  { "echo", "/bin/echo", NULL, NEED_ARGS },
+  { NULL, NULL, NULL, 0 }
 };
 
 static void print_cmds(void)
@@ -122,11 +128,13 @@ static void print_cmds(void)
   size_t idx = 0;
   printf("\33[2K\r[COMMANDS]\n");
   while ( cmds[idx++].path != NULL ) {
-    printf("  [%lu] %s\n", (unsigned long int)idx-1, ( cmds[idx-1].name != NULL ? cmds[idx-1].name : "unknown" ));
+    printf("  [%lu] %s [%s]\n", (unsigned long int)idx-1,
+      ( cmds[idx-1].name != NULL ? cmds[idx-1].name : "unknown" ),
+      ( cmds[idx-1].defargs != NULL ? cmds[idx-1].defargs : "" ));
   }
 }
 
-int safe_exec(const char* cmdWithArgs)
+static int safe_exec(const char* cmdWithArgs)
 {
   pid_t child;
   if ( (child = fork()) == 0 ) {
@@ -170,10 +178,25 @@ static int exec_cmd(size_t i, char* args, size_t szArgs)
   size_t idx = (size_t)-1;
   while ( cmds[++idx].path != NULL ) {
     if (idx == i) {
+      if (cmds[idx].flags & NEED_ARGS) {
+        if (!args)
+          return -9;
+        if (strnlen(args, szArgs) < 1)
+          return -9;
+      } else if (cmds[idx].flags & NO_ARGS) {
+        if (args)
+          return -8;
+      }
       size_t siz = strlen(cmds[idx].path)+szArgs+1;
+      if (cmds[idx].defargs)
+        siz += strlen(cmds[idx].defargs)+2;
       char execbuf[siz+1];
       memset(&execbuf[0], '\0', siz+1);
-      snprintf(&execbuf[0], siz+1, "%s %s", cmds[idx].path, args);
+      if (cmds[idx].defargs) {
+        snprintf(&execbuf[0], siz+1, "%s %s %s", cmds[idx].path, cmds[idx].defargs, args);
+      } else {
+        snprintf(&execbuf[0], siz+1, "%s %s", cmds[idx].path, args);
+      }
       return safe_exec(&execbuf[0]);
     }
   }
@@ -187,13 +210,23 @@ static int exec_cmd(size_t i, char* args, size_t szArgs)
 static int msgfd = -1;
 static int init_msg(void)
 {
+  umask(664);
+  struct stat buf;
+  memset(&buf, '\0', sizeof(buf));
+  if (stat(MSGFILE, &buf) == 0) {
+    if (!S_ISREG(buf.st_mode) || !(buf.st_mode & S_IRUSR) || !(buf.st_mode & S_IWUSR) ||
+        !(buf.st_mode & S_IRGRP) || !(buf.st_mode & S_IWGRP) || !(buf.st_mode & S_IROTH)) {
+      fprintf(stderr, "file (`%s`) mode should be 0664\n", MSGFILE);
+      return -1;
+    }
+  } else return -1;
   msgfd = open(MSGFILE, O_RDWR | O_CREAT | O_APPEND | O_DSYNC | O_RSYNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
   if (msgfd < 0) {
     fprintf(stderr, "fopen(\"%s\") with write access: %s\n", MSGFILE, strerror(errno));
     msgfd = open(MSGFILE, O_RDONLY | O_CREAT | O_APPEND | O_DSYNC | O_RSYNC);
     if (msgfd < 0) {
       fprintf(stderr, "fopen(\"%s\") readonly: %s\n", MSGFILE, strerror(errno));
-      return -1;
+      return -2;
     }
   }
   return 0;
@@ -445,8 +478,10 @@ int main(int argc, char** argv)
   char inputbuf[absiz+1];
   memset(&inputbuf[0], '\0', absiz+1);
 #ifdef _HAS_MSG
-  if (init_msg() != 0)
+  if (init_msg() != 0) {
+    fprintf(stderr, "init msg failed\n");
     return 1;
+  }
   if (argc > 1) {
     const char optRmsg[] = "readmsg";
     const char optWmsg[] = "writemsg";
@@ -588,16 +623,27 @@ int main(int argc, char** argv)
                 } else if (state == MS_COMMAND) {
 #ifdef _HAS_CMD
                   int inputFail = 0;
-                  if (inputsiz < 3) {
+                  if (inputsiz < 1) {
                     inputFail++;
                   } else {
                     char* endptr = NULL;
+                    size_t szEndptr = 0;
                     unsigned long int tmpi = strtoul(inputbuf, &endptr, 10);
+                    const char exec_str[] = "\33[2K\rExec CMD #";
                     if (*endptr == ' ') {
                       endptr++;
-                      printf("\33[2K\rExec CMD #%lu with args: %s\n", tmpi, endptr);
+                      szEndptr = strnlen(endptr, inputsiz-1);
+                      printf("%s%lu with args: %s\n", exec_str, tmpi, endptr);
+                    } else if (*endptr == '\0') {
+                      printf("%s%lu\n", exec_str, tmpi);
+                      endptr = NULL;
+                    } else inputFail++;
+
+                    if (inputFail == 0) {
                       int retval;
-                      switch ( (retval = exec_cmd(tmpi, endptr, strlen(endptr))) ) {
+                      switch ( (retval = exec_cmd(tmpi, endptr, szEndptr)) ) {
+                        case -9: printf("args required for cmd #%lu\n", tmpi); break;
+                        case -8: printf("no args allowed for cmd #%lu\n", tmpi); break;
                         case -7: printf("unknown cmd #%lu\n", tmpi); break;
                         case -6: printf("fork error cmd #%lu\n", tmpi); break;
                         case -5: printf("execute cmd #%lu\n", tmpi); break;
@@ -605,10 +651,10 @@ int main(int argc, char** argv)
                         case 0: break;
                         default: printf("Something went wrong, child returned: %d\n", retval); break;
                       }
-                    } else inputFail++;
+                    }
                   }
                   if (inputFail > 0)
-                    printf("\33[2K\rFORMAT: [cmd#] [params]\n");
+                    printf("\33[2K\rFORMAT: [cmd# [params]]\n");
                 }
 #endif
               }
