@@ -9,16 +9,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
+#include <string.h>    /* memset(...), strstr(...) */
 #include <sys/wait.h>
+#include <libgen.h>    /* basename(...) */
 
 
-#ifndef CMD
-#define CMD "/usr/sbin/ether-wake"
-#endif
+static const char* cmds[] =
+  { "/usr/sbin/ether-wake" };
+static const size_t cmdsiz = sizeof(cmds)/sizeof(cmds[0]);
 
-
-int safe_exec(const char* cmdWithArgs)
+static int safe_exec(const char* cmdWithArgs)
 {
   pid_t child;
   if ( (child = fork()) == 0 ) {
@@ -48,17 +48,51 @@ int safe_exec(const char* cmdWithArgs)
     }
     args[szCur] = NULL;
     execv(cmd, args);
-  } else {
+    exit(-5);
+  } else if (child != -1) {
     int retval = 0;
     waitpid(child, &retval, 0);
     return retval;
   }
-  return -1;
+  return -6;
+}
+
+static const char* getCmd(char* arg0)
+{
+  char* barg0 = strdup( basename(arg0) );
+  size_t szArg0 = strlen(barg0);
+  char* bcmd = NULL;
+  const char* retval = NULL;
+
+  if (barg0) {
+    for (size_t i = 0; i < cmdsiz; ++i) {
+      bcmd = strdup( basename((char*)cmds[i]) );
+      if (bcmd) {
+        if (strlen(bcmd) == szArg0 && strstr(arg0, bcmd)) {
+          retval = cmds[i];
+          break;
+        }
+        free(bcmd);
+        bcmd = NULL;
+      }
+    }
+  }
+
+  if (bcmd)
+    free(bcmd);
+  free(barg0);
+  return retval;
 }
 
 int main(int argc, char** argv)
 {
   uid_t ruid, euid, suid;
+
+  const char* runpath = getCmd(argv[0]);
+  if (!runpath) {
+    fprintf(stderr, "%s not runnable cmd\n", argv[0]);
+    return 1;
+  }
 
   if (getresuid(&ruid, &euid, &suid) != 0) {
     perror("getresuid()");
@@ -71,8 +105,8 @@ int main(int argc, char** argv)
   } else printf("%s: setuid(0)\n", argv[0]);
 
   char* cmd = NULL;
-  if (asprintf(&cmd, "%s", CMD) <= 0) {
-    fprintf(stderr, "%s: asprintf(\"%s\") error\n", argv[0], CMD);
+  if (asprintf(&cmd, "%s", runpath) <= 0) {
+    fprintf(stderr, "%s: asprintf(\"%s\") error\n", argv[0], runpath);
     return 1;
   }
 
