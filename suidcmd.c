@@ -9,17 +9,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
+#include <string.h>    /* memset(...), strstr(...) */
 #include <sys/wait.h>
+#include <libgen.h>    /* basename(...) */
 
 
-#ifndef CMD
-#define CMD "/usr/sbin/ether-wake"
+#ifndef SUIDCMD_CMDS
+#define SUIDCMD_CMDS "/usr/sbin/ether-wake"
 #endif
+static const char* const cmds[] =
+  { SUIDCMD_CMDS };
+static const size_t cmdsiz = sizeof(cmds)/sizeof(cmds[0]);
 
-
-int safe_exec(const char* cmdWithArgs)
+static int safe_exec(const char* cmdWithArgs)
 {
+  if (!cmdWithArgs)
+    return -2;
   pid_t child;
   if ( (child = fork()) == 0 ) {
     size_t szCur = 0, szMax = 10;
@@ -48,17 +53,79 @@ int safe_exec(const char* cmdWithArgs)
     }
     args[szCur] = NULL;
     execv(cmd, args);
-  } else {
+    exit(-3);
+  } else if (child != -1) {
     int retval = 0;
     waitpid(child, &retval, 0);
     return retval;
   }
-  return -1;
+  return -4;
+}
+
+static const char* getCmd(char* arg0)
+{
+  char* tmp = basename(arg0);
+  if (!tmp)
+    return NULL;
+
+  char* barg0 = strdup( tmp );
+  char* bcmd = NULL;
+  const char* retval = NULL;
+
+  if (barg0) {
+    for (size_t i = 0; i < cmdsiz; ++i) {
+      tmp = strdup(cmds[i]); /* workaround for uclibc */
+      if (tmp) {
+        bcmd = strdup(basename(tmp));
+        free(tmp);
+        tmp = NULL;
+      }
+      if (bcmd) {
+        char* found = strstr(arg0, bcmd);
+        if (found && strlen(found) == strlen(bcmd)) {
+          retval = cmds[i];
+          break;
+        }
+        free(bcmd);
+        bcmd = NULL;
+      }
+    }
+  }
+
+  if (bcmd)
+    free(bcmd);
+  free(barg0);
+  return retval;
+}
+
+static void printCmds(void)
+{
+  printf("%s", "Available Commands: ");
+  for (size_t i = 0; i < cmdsiz; ++i) {
+    char* tmp = strdup(cmds[i]);
+    if (!tmp)
+      continue;
+    printf("%s%s", basename(tmp), (i < cmdsiz-1 ? ", " : ""));
+    free(tmp);
+  }
+  printf("\n");
 }
 
 int main(int argc, char** argv)
 {
   uid_t ruid, euid, suid;
+
+  if (argc < 1) {
+    fprintf(stderr, "argcount = %d < 1\n", argc);
+    return 1;
+  }
+
+  const char* runpath = getCmd(argv[0]);
+  if (!runpath) {
+    fprintf(stderr, "%s not runnable cmd\n", argv[0]);
+    printCmds();
+    return 1;
+  }
 
   if (getresuid(&ruid, &euid, &suid) != 0) {
     perror("getresuid()");
@@ -71,8 +138,8 @@ int main(int argc, char** argv)
   } else printf("%s: setuid(0)\n", argv[0]);
 
   char* cmd = NULL;
-  if (asprintf(&cmd, "%s", CMD) <= 0) {
-    fprintf(stderr, "%s: asprintf(\"%s\") error\n", argv[0], CMD);
+  if (asprintf(&cmd, "%s", runpath) <= 0) {
+    fprintf(stderr, "%s: asprintf(\"%s\") error\n", argv[0], runpath);
     return 1;
   }
 
@@ -89,6 +156,9 @@ int main(int argc, char** argv)
   int retval = -1;
   switch ( (retval = safe_exec(cmd)) ) {
     case -1: fprintf(stderr, "%s: could not create child process..\n", argv[0]); return 1;
+    case -2: fprintf(stderr, "%s: invalid command..\n", argv[0]); return 1;
+    case -3: fprintf(stderr, "%s: exec failure..\n", argv[0]); return 1;
+    case -4: fprintf(stderr, "%s: fork error..\n", argv[0]); return 1;
     case 127: fprintf(stderr, "%s: could not execute shell (child process)..\n", argv[0]); return 1;
     default:
       printf("%s: child process returned with: %d\n", argv[0], retval);

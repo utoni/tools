@@ -29,3 +29,10 @@
 #define _HAS_UTMP 1
 #define _HAS_SYSINFO 1
 
+
+/***********
+ * suidcmd *
+ ***********/
+
+/* suid commands (e.g.: "first-cmd", "second-cmd", "nth-cmd") */
+#define SUIDCMD_CMDS "/usr/sbin/ether-wake"
