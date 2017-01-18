@@ -35,4 +35,4 @@
  ***********/
 
 /* suid commands (e.g.: "first-cmd", "second-cmd", "nth-cmd") */
-#define SUIDCMD_CMDS "/usr/sbin/ether-wake"
+#define SUIDCMD_CMDS "/usr/sbin/ether-wake", "/bin/ping"

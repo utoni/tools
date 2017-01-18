@@ -116,7 +116,8 @@ struct __attribute__((__packed__)) cmd {
 };
 
 static struct cmd cmds[] = {
-  { "ether-wake", "/var/media/ftp/bin/suid-ether-wake", "-b -i lan", NEED_ARGS },
+  { "ether-wake", "/usr/bin/suid-ether-wake", "-b -i lan", NEED_ARGS },
+  { "ping", "/usr/bin/suid-ping", NULL, NEED_ARGS },
   { "netstat-client", "/bin/netstat", "-pntu", NO_ARGS },
   { "netstat-server", "/bin/netstat", "-lpn", NO_ARGS },
   { "echo", "/bin/echo", NULL, NEED_ARGS },

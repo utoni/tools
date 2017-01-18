@@ -1,5 +1,5 @@
 /*
- * build with: gcc -std=c99 -D_GNU_SOURCE=1 -Wall -O2 -ffunction-sections -fdata-sections -fomit-frame-pointer ./suidcmd.c -o ./suidcmd
+ * build with: gcc -std=c99 -D_HAVE_CONFIG=1 -D_GNU_SOURCE=1 -Wall -O2 -ffunction-sections -fdata-sections -fomit-frame-pointer ./suidcmd.c -o ./suidcmd
  * strip -s ./suidcmd
  */
 
@@ -14,9 +14,6 @@
 #include <libgen.h>    /* basename(...) */
 
 
-#ifndef SUIDCMD_CMDS
-#define SUIDCMD_CMDS "/usr/sbin/ether-wake"
-#endif
 static const char* const cmds[] =
   { SUIDCMD_CMDS };
 static const size_t cmdsiz = sizeof(cmds)/sizeof(cmds[0]);
