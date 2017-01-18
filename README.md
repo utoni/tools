@@ -3,7 +3,7 @@ some tools
 
 aes.c
 ========
-A minimal working aes implementation.<br />
+A minimal working CLI based aes implementation.<br />
 
 asciihexer.c
 ========
@@ -19,7 +19,7 @@ Conway's GameOfLife - written by Steffen Vogel / bugfixed,improved by myself. <b
 
 suidcmd.c
 ========
-Run arbitrary commands (useful for running non-suid programs on non-suid fs).<br />
+multi-call-setuid-binary: Run arbitrary commands (useful for running non-suid programs on non-suid fs).<br />
 
 xidle.c
 ========
