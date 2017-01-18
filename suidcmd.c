@@ -8,6 +8,8 @@
 #endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>    /* memset(...), strstr(...) */
 #include <sys/wait.h>
@@ -114,6 +116,15 @@ int main(int argc, char** argv)
 
   if (argc < 1) {
     fprintf(stderr, "argcount = %d < 1\n", argc);
+    return 1;
+  }
+
+  struct stat buf;
+  if (stat(argv[0], &buf) != 0) {
+    perror("stat");
+  }
+  if ((buf.st_mode & S_ISUID) == 0) {
+    fprintf(stderr, "%s: not set suid\n", argv[0]);
     return 1;
   }
 

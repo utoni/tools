@@ -444,15 +444,19 @@ static void print_usage_and_exit(char* arg0)
         "\t-m\tmessage to (en|de)crypt\n"
         "\t-e\tencrypt\n"
         "\t-d\tdecrypt\n"
+        "\t-c\tC-Str (in|out)put\n"
+        "\t-q\tquiet mode - print only (en|de)crypted chars\n"
         );
     exit(EXIT_FAILURE);
 }
 
-#define PRINT_BYTES(bPtr, siz, offset) { int _bPtr_idx; for (_bPtr_idx = offset; _bPtr_idx < offset+siz; _bPtr_idx++) { printf("%02X ", (unsigned char)bPtr[_bPtr_idx]); } printf("\n"); }
+#define PRINT_BYTES(bPtr, siz, offset, doCStr) { int _bPtr_idx; if (doCStr) printf("\""); for (_bPtr_idx = offset; _bPtr_idx < offset+siz; _bPtr_idx++) { printf("%s%02X%s", (doCStr ? "\\x" : ""), (unsigned char)bPtr[_bPtr_idx], (doCStr ? "" : " ")); } if (doCStr) printf("\""); printf("\n"); }
 int main(int argc, char *argv[])
 {
     bool doEncrypt = false;
     bool doDecrypt = false;
+    bool doCStrOutput = false;
+    bool quiet = false;
     int opt;
     int keysiz = KEY_256;
     char *key = NULL;
@@ -463,7 +467,7 @@ int main(int argc, char *argv[])
     if (argc == 1)
         print_usage_and_exit(argv[0]);
 
-    while ((opt = getopt(argc, argv, "s:k:m:ed")) != -1 ) {
+    while ((opt = getopt(argc, argv, "s:k:m:edcq")) != -1 ) {
         switch (opt) {
         case 's': {
             unsigned long int ksiz = strtoul(optarg, NULL, 10);
@@ -495,6 +499,12 @@ int main(int argc, char *argv[])
         case 'd':
             doDecrypt = true;
             break;
+        case 'c':
+            doCStrOutput = true;
+            break;
+        case 'q':
+            quiet = true;
+            break;
         }
     }
 
@@ -519,25 +529,25 @@ int main(int argc, char *argv[])
     size_t cipher_siz = strlen(msg);
     char *cipher_msg = msg;
     if (doEncrypt) {
-        printf("Encrypted[HEX]..: ");
+        if (!quiet) printf("Encrypted[HEX]..: ");
         cipher_msg = aes_crypt_s(ctx, msg, strlen(msg), &cipher_siz, true);
         if (!cipher_msg || cipher_siz == 0) {
             fprintf(stderr, "%s: aes encryption failed\n", argv[0]);
             return EXIT_FAILURE;
         }
-        PRINT_BYTES(cipher_msg, cipher_siz, 0);
+        PRINT_BYTES(cipher_msg, cipher_siz, 0, doCStrOutput);
     }
 
     size_t plain_siz = 0;
     char *plain_msg = cipher_msg;
     if (doDecrypt) {
-        printf("Decrypted[HEX]..: ");
+        if (!quiet) printf("Decrypted[HEX]..: ");
         plain_msg = aes_crypt_s(ctx, cipher_msg, cipher_siz, &plain_siz, false);
         if (!plain_msg || plain_siz == 0) {
             fprintf(stderr, "%s: aes decryption failed\n", argv[0]);
             return EXIT_FAILURE;
         }
-        PRINT_BYTES(plain_msg, plain_siz, 0);
+        PRINT_BYTES(plain_msg, plain_siz, 0, doCStrOutput);
     }
 
     if (doEncrypt && doDecrypt) {
@@ -545,7 +555,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "%s: message differs from original - (en|de)cryption may failed\n", argv[0]);
             return EXIT_FAILURE;
         }
-        printf("Decrypted[ASCII]: ");
+        if (!quiet) printf("Decrypted[ASCII]: ");
         puts(plain_msg);
     }
 
