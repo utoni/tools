@@ -7,10 +7,16 @@
 // You can find it at http://csrc.nist.gov/publications/fips/fips197/fips-197.pdf
 // You may use this code as you wish, but do not remove this comment
 // This is only a proof of concept, and should not be considered as the most efficient implementation
- 
+
+#include <unistd.h> 
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <time.h>
+#include <errno.h>
+
  
 #define AES_RPOL    0x011b // reduction polynomial (x^8 + x^4 + x^3 + x + 1)
 #define AES_GEN     0x03   // gf(2^8) generator  (x + 1)
@@ -19,7 +25,7 @@
 #define KEY_128     (128/8)
 #define KEY_192     (192/8)
 #define KEY_256     (256/8)
- 
+
 #define aes_mul(a, b) ((a)&&(b)?g_aes_ilogt[(g_aes_logt[(a)]+g_aes_logt[(b)])%0xff]:0)
 #define aes_inv(a)    ((a)?g_aes_ilogt[0xff-g_aes_logt[(a)]]:0)
  
@@ -53,11 +59,72 @@ void aes_invmixcolumns(aes_ctx_t *ctx);
 void aes_decrypt(aes_ctx_t *ctx, unsigned char input[16], unsigned char output[16]);
  
 void aes_free_ctx(aes_ctx_t *ctx);
- 
+
+
+char* aes_crypt_s(aes_ctx_t* ctx, char* input, size_t siz, size_t* newsiz, bool doEncrypt)
+{
+    size_t bsiz;
+    if (doEncrypt) {
+        bsiz = siz + (16 - siz%16);
+    } else {
+        bsiz = siz;
+    }
+    char* output = calloc(1, bsiz+1);
+    unsigned char inbuf[16];
+    unsigned char outbuf[16];
+
+    size_t i = 0;
+    for (i = 0; i < bsiz; i=i+16) {
+        size_t maxsiz;
+        if (doEncrypt && bsiz-i <= 16) {
+            maxsiz = siz%16;
+        } else maxsiz = 16;
+        memset(&inbuf[0], '\0', 16);
+        memset(&outbuf[0], '\0', 16);
+        memcpy( (void*)&inbuf[0], (void*)(input+i), maxsiz);
+        if (doEncrypt) {
+            aes_encrypt(ctx, inbuf, outbuf);
+        } else {
+            aes_decrypt(ctx, inbuf, outbuf);
+        }
+        memcpy( (void*)(output+i), (void*)&outbuf[0], 16);
+    }
+    if (newsiz)
+        *newsiz = bsiz;
+    return output;
+}
+
+static uint64_t __rdtsc(void)
+{
+    unsigned int lo, hi;
+    __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static void __pseudoRandom(unsigned char* buf, size_t siz)
+{
+    time_t seed = time(NULL) + __rdtsc();
+
+    for (size_t i = 0; i < siz; ++i) {
+        buf[i] = (unsigned char)((seed * time(NULL)) % 256);
+        seed++;
+    }
+}
+
+void aes_randomkey(unsigned char* keyout, size_t keyLen)
+{
+    __pseudoRandom(keyout, keyLen);
+}
+
 void init_aes()
 {
     int i;
     unsigned char gen;
+
+    memset(&g_aes_logt[0], '\0', sizeof(g_aes_logt));
+    memset(&g_aes_ilogt[0], '\0', sizeof(g_aes_ilogt));
+    memset(&g_aes_sbox[0], '\0', sizeof(g_aes_sbox));
+    memset(&g_aes_isbox[0], '\0', sizeof(g_aes_isbox));
  
     // build logarithm table and it's inverse
     gen = 1;
@@ -116,7 +183,7 @@ aes_ctx_t *aes_alloc_ctx(unsigned char *key, size_t keyLen)
     }
  
     ks_size = 4*(rounds+1)*sizeof(unsigned long);
-    ctx = malloc(sizeof(aes_ctx_t)+ks_size);
+    ctx = calloc(1, sizeof(aes_ctx_t)+ks_size);
     if(ctx) {
         ctx->rounds = rounds;
         ctx->kcol = keyLen/4;
@@ -313,7 +380,8 @@ void aes_invmixcolumns(aes_ctx_t *ctx)
 {
     unsigned char nstate[4][4];
     int i;
-     
+
+    memset(&nstate[0][0], '\0', sizeof(unsigned char)*16);
     for(i = 0; i < 4; i++) {
         nstate[0][i] = aes_mul(0x0e, ctx->state[0][i]) ^
                 aes_mul(0x0b, ctx->state[1][i]) ^
@@ -366,45 +434,127 @@ void aes_free_ctx(aes_ctx_t *ctx)
     free(ctx);
 }
 
-#define PRINT_BYTES(bPtr, siz, offset) { int _bPtr_idx; for (_bPtr_idx = offset; _bPtr_idx < offset+siz; _bPtr_idx++) { printf("%02X ", bPtr[_bPtr_idx]); } printf("\n"); }
+
+static void print_usage_and_exit(char* arg0)
+{
+    fprintf(stderr, "usage %s [options]\n\n%s", (arg0 != NULL ? arg0 : ""),
+        "where [options] can be:\n"
+        "\t-s\tkeysize (128/192/256)\n"
+        "\t-k\tkey with keysize length\n"
+        "\t-m\tmessage to (en|de)crypt\n"
+        "\t-e\tencrypt\n"
+        "\t-d\tdecrypt\n"
+        );
+    exit(EXIT_FAILURE);
+}
+
+#define PRINT_BYTES(bPtr, siz, offset) { int _bPtr_idx; for (_bPtr_idx = offset; _bPtr_idx < offset+siz; _bPtr_idx++) { printf("%02X ", (unsigned char)bPtr[_bPtr_idx]); } printf("\n"); }
 int main(int argc, char *argv[])
 {
-    if (argc != 3) {
-        fprintf(stderr, "usage: %s [KEY] [MSG]\n", argv[0]);
-        return 1;
+    bool doEncrypt = false;
+    bool doDecrypt = false;
+    int opt;
+    int keysiz = KEY_256;
+    char *key = NULL;
+    char *msg = NULL;
+
+    if (argc == 0)
+        exit(1);
+    if (argc == 1)
+        print_usage_and_exit(argv[0]);
+
+    while ((opt = getopt(argc, argv, "s:k:m:ed")) != -1 ) {
+        switch (opt) {
+        case 's': {
+            unsigned long int ksiz = strtoul(optarg, NULL, 10);
+            if (errno == EINVAL || errno == ERANGE) {
+                fprintf(stderr, "%s: keysiz(`-s`) invalid input (numbers only)\n", argv[0]);
+                return 1;
+            } else {
+                switch (ksiz) {
+                case 128: keysiz = KEY_128; break;
+                case 192: keysiz = KEY_192; break;
+                case 256: keysiz = KEY_256; break;
+                default: fprintf(stderr, "%s: keysiz(`-s`) invalid number (valid numbers: 128/192/256)\n", argv[0]); return 1;
+                }
+            }
+            break;
+        }
+        case 'k':
+            key = strdup(optarg);
+            if (strlen(key) != keysiz) {
+                 fprintf(stderr, "%s: key(`-k`) does not match keysiz(`-s`) %d\n", argv[0], keysiz);
+            }
+            break;
+        case 'm':
+            msg = strdup(optarg);
+            break;
+        case 'e':
+            doEncrypt = true;
+            break;
+        case 'd':
+            doDecrypt = true;
+            break;
+        }
     }
 
-    size_t klen = strlen(argv[1]);
-    unsigned char key[KEY_128];
-    memcpy(key, argv[1], klen);
-
-    size_t plen = strlen(argv[2]);
-    unsigned char ptext[plen+1];
-    memcpy(ptext, argv[2], plen);
-    ptext[plen] = '\0';
-
-    unsigned char ctext[plen+1];
-    memset(ctext, '\0', plen+1);
-    unsigned char decptext[plen+1];
-    memset(decptext, '\0', plen+1);
+    if (!key || !msg) {
+        fprintf(stderr, "%s: missing key or message\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+    if (!doEncrypt && !doDecrypt) {
+        doEncrypt = true;
+        doDecrypt = true;
+    }
 
     aes_ctx_t *ctx;
- 
+
     init_aes();
-    ctx = aes_alloc_ctx(key, sizeof(key));
+    ctx = aes_alloc_ctx((unsigned char*)key, keysiz);
     if(!ctx) {
         perror("aes_alloc_ctx");
         return EXIT_FAILURE;
     }
-    printf("Encrypted[HEX]..: ");
-    aes_encrypt(ctx, ptext, ctext);
-    PRINT_BYTES(ctext, sizeof(ctext), 0);
-    aes_decrypt(ctx, ctext, decptext);
-    printf("Decrypted[HEX]..: ");
-    PRINT_BYTES(decptext, sizeof(decptext), 0);
-    printf("Decrypted[ASCII]: ");
-    puts((char*)decptext);
- 
+
+    size_t cipher_siz = strlen(msg);
+    char *cipher_msg = msg;
+    if (doEncrypt) {
+        printf("Encrypted[HEX]..: ");
+        cipher_msg = aes_crypt_s(ctx, msg, strlen(msg), &cipher_siz, true);
+        if (!cipher_msg || cipher_siz == 0) {
+            fprintf(stderr, "%s: aes encryption failed\n", argv[0]);
+            return EXIT_FAILURE;
+        }
+        PRINT_BYTES(cipher_msg, cipher_siz, 0);
+    }
+
+    size_t plain_siz = 0;
+    char *plain_msg = cipher_msg;
+    if (doDecrypt) {
+        printf("Decrypted[HEX]..: ");
+        plain_msg = aes_crypt_s(ctx, cipher_msg, cipher_siz, &plain_siz, false);
+        if (!plain_msg || plain_siz == 0) {
+            fprintf(stderr, "%s: aes decryption failed\n", argv[0]);
+            return EXIT_FAILURE;
+        }
+        PRINT_BYTES(plain_msg, plain_siz, 0);
+    }
+
+    if (doEncrypt && doDecrypt) {
+        if (strlen(msg) != strlen(plain_msg) || strcmp(msg, plain_msg) != 0) {
+            fprintf(stderr, "%s: message differs from original - (en|de)cryption may failed\n", argv[0]);
+            return EXIT_FAILURE;
+        }
+        printf("Decrypted[ASCII]: ");
+        puts(plain_msg);
+    }
+
+    free(key);
+    free(msg);
+    if (doEncrypt)
+        free(cipher_msg);
+    if (doDecrypt)
+        free(plain_msg);
     aes_free_ctx(ctx);
     return EXIT_SUCCESS;
 }
