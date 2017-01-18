@@ -94,6 +94,7 @@ char* aes_crypt_s(aes_ctx_t* ctx, char* input, size_t siz, size_t* newsiz, bool 
     return output;
 }
 
+/*
 #ifdef __i386__
 static uint64_t __rnd(void)
 {
@@ -122,6 +123,7 @@ void aes_randomkey(unsigned char* keyout, size_t keyLen)
 {
     __pseudoRandom(keyout, keyLen);
 }
+*/
 
 void init_aes()
 {
