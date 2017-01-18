@@ -94,16 +94,23 @@ char* aes_crypt_s(aes_ctx_t* ctx, char* input, size_t siz, size_t* newsiz, bool 
     return output;
 }
 
-static uint64_t __rdtsc(void)
+#ifdef __i386__
+static uint64_t __rnd(void)
 {
     unsigned int lo, hi;
     __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
     return ((uint64_t)hi << 32) | lo;
 }
+#else
+static uint64_t __rnd(void)
+{
+    return 0;
+}
+#endif
 
 static void __pseudoRandom(unsigned char* buf, size_t siz)
 {
-    time_t seed = time(NULL) + __rdtsc();
+    time_t seed = time(NULL) + __rnd();
 
     for (size_t i = 0; i < siz; ++i) {
         buf[i] = (unsigned char)((seed * time(NULL)) % 256);
