@@ -594,6 +594,8 @@ int main(int argc, char** argv)
               break;
             case 'm':
 #ifdef _HAS_MSG
+              if (lseek(msgfd, 0, SEEK_SET) != -1)
+                while (print_msg() == 0) {}
               state = MS_MESSAGE;
 #else
               printf("<feature disabled>\n");
