@@ -59,7 +59,7 @@
 /* for print_memusage() and print cpuusage() see: http://stackoverflow.com/questions/63166/how-to-determine-cpu-and-memory-consumption-from-inside-a-process */
 
 
-static const char keymsg[] = " ['q'-EXIT | 'm'-MESSAGE | 'c'-CMDS] ";
+static const char keymsg[] = " ['q'-EXIT | 'm'-MESSAGE | 'i'-INFO | 'c'-CMDS] ";
 static const char txtheader[] =
   "**************\n"
   "* dummyshell *\n"
@@ -460,7 +460,21 @@ void SigIntHandler(int signum)
 }
 #endif
 
-enum mainState { MS_DEFAULT, MS_MESSAGE, MS_COMMAND };
+enum mainState { MS_DEFAULT, MS_MESSAGE, MS_INFO, MS_COMMAND };
+
+static void print_info(void)
+{
+#ifdef _HAS_UTMP
+  print_utmp();
+#endif
+#ifdef _HAS_HOSTENT
+  print_nethost();
+#endif
+#ifdef _HAS_SYSINFO
+  print_memusage();
+  print_cpuusage();
+#endif
+}
 
 int main(int argc, char** argv)
 {
@@ -545,16 +559,7 @@ int main(int argc, char** argv)
         if (localtime_r(&cur, &localtime) != NULL) {
           printf("\33[2K\r--- %02d:%02d:%02d ---\n", localtime.tm_hour, localtime.tm_min, localtime.tm_sec);
         }
-#ifdef _HAS_UTMP
-        print_utmp();
-#endif
-#ifdef _HAS_HOSTENT
-        print_nethost();
-#endif
-#ifdef _HAS_SYSINFO
-        print_memusage();
-        print_cpuusage();
-#endif
+        print_info();
         doOnce = 0;
       }
     } else doOnce = 1;
@@ -563,6 +568,10 @@ int main(int argc, char** argv)
     while (print_msg() == 0) {}
 #endif
     switch (state) {
+      case MS_INFO:
+        printf("\33[2K\r[INFO]\n");
+        print_info();
+        state = MS_DEFAULT;
       case MS_DEFAULT:
         printf("\33[2K\r--- %02d:%02d:%02d ---%s", hrs, mins, ((unsigned int)diff % 60), keymsg);
         break;
@@ -594,12 +603,17 @@ int main(int argc, char** argv)
               break;
             case 'm':
 #ifdef _HAS_MSG
-              if (lseek(msgfd, 0, SEEK_SET) != -1)
+              if (lseek(msgfd, 0, SEEK_SET) != -1) {
+                printf("\33[2K\r[MESSAGES]\n");
                 while (print_msg() == 0) {}
+              }
               state = MS_MESSAGE;
 #else
               printf("<feature disabled>\n");
 #endif
+              break;
+            case 'i':
+              state = MS_INFO;
               break;
             case 'c':
 #ifdef _HAS_CMD
@@ -611,6 +625,8 @@ int main(int argc, char** argv)
               break;
             default: printf("unknown key: %c\n", key); break;
           }
+          break;
+        case MS_INFO:
           break;
         case MS_COMMAND:
         case MS_MESSAGE:
@@ -671,8 +687,8 @@ int main(int argc, char** argv)
                   }
                   if (inputFail > 0)
                     printf("\33[2K\rFORMAT: [cmd# [params]]\n");
-                }
 #endif
+                }
               }
               state = MS_DEFAULT;
               readInput(&inputbuf[0], &inputsiz, absiz, 0, I_CLEARBUF);
