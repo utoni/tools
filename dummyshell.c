@@ -395,13 +395,17 @@ static void print_utmp(void)
 #ifdef _HAS_SYSINFO
 static unsigned long long lastTotalUser, lastTotalUserLow, lastTotalSys, lastTotalIdle;
 
-static void init_cpuusage(){
+static int init_cpuusage(){
   FILE* file = fopen("/proc/stat", "r");
   if (file) {
-    fscanf(file, "cpu %llu %llu %llu %llu", &lastTotalUser, &lastTotalUserLow,
-      &lastTotalSys, &lastTotalIdle);
+    unsigned char success = 1;
+    if (fscanf(file, "cpu %llu %llu %llu %llu", &lastTotalUser, &lastTotalUserLow, &lastTotalSys, &lastTotalIdle) != 4)
+      success = 0;
     fclose(file);
+    if (success)
+      return 0;
   }
+  return 1;
 }
 
 static void print_cpuusage(){
@@ -485,6 +489,10 @@ int main(int argc, char** argv)
 
 #ifdef _HAS_SIGNAL
   signal(SIGINT, SigIntHandler);
+#endif
+#ifdef FLOOD_PROTECTION
+  unsigned char curInput = 0;
+  const unsigned char maxInput = FLOOD_PROTECTION;
 #endif
   size_t inputsiz = 0, absiz = UINT8_MAX;
   struct winsize wsiz;
@@ -590,10 +598,21 @@ int main(int argc, char** argv)
     if (doLoop == 1 && ret == 0) {
       tv.tv_sec = 1;
       tv.tv_usec = 0;
+#ifdef FLOOD_PROTECTION
+      curInput = 0;
+#endif
     } else if (FD_ISSET(STDIN_FILENO, &fds)) {
       char key = getchar();
       switch (state) {
         case MS_DEFAULT:
+#ifdef FLOOD_PROTECTION
+          if (curInput++ >= maxInput) {
+            curInput = 0;
+            printf("\33[2K\r<flood protection> (suspended for %us)\n", FLOOD_TIMEOUT);
+            sleep(FLOOD_TIMEOUT);
+            while (getchar() != EOF) {}
+          }
+#endif
           switch ( key ) {
             case 'q':
 #ifdef _HAS_SIGNAL

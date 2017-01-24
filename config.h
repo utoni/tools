@@ -29,6 +29,11 @@
 #define _HAS_UTMP 1
 #define _HAS_SYSINFO 1
 
+/* flood protection max input chars per second */
+#define FLOOD_PROTECTION 5
+/* flood protection timeout in seconds */
+#define FLOOD_TIMEOUT 10
+
 
 /***********
  * suidcmd *
