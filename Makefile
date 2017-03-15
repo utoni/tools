@@ -1,4 +1,5 @@
 CC := gcc
+INSTALL := install
 CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
 LDFLAGS :=
 RM := rm -rf
@@ -56,6 +57,10 @@ clean:
 	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d xidle.d
 	-$(RM) aes asciihexer dummyshell gol suidcmd xidle
 	-@echo ' '
+
+install: $(TARGETS)
+	$(INSTALL) -d $(PREFIX)/usr/bin
+	$(INSTALL) -s $(TARGETS) $(PREFIX)/usr/bin
 
 rebuild: clean all
 
