@@ -65,7 +65,30 @@ static const char txtheader[] =
   "* dummyshell *\n"
   "**************\n"
   "!(C) by Toni Uhlig\n"
-  "@see: https://raw.githubusercontent.com/lnslbrty/foo-scripts/master/dummyshell.c\n";
+  "@see: https://raw.githubusercontent.com/lnslbrty/tools/master/dummyshell.c\n"
+  "@features: "
+#ifdef _HAS_CMD
+  "COMMAND "
+#endif
+#ifdef _HAS_MSG
+  "MESSAGE "
+#endif
+#ifdef _HAS_HOSTENT
+  "NETHOST "
+#endif
+#ifdef _HAS_SIGNAL
+  "SIGNAL "
+#endif
+#ifdef _HAS_UTMP
+  "UTMP "
+#endif
+#ifdef _HAS_SYSINFO
+  "SYSINFO "
+#endif
+#ifdef FLOOD_PROTECTION
+  "ANTIFLOOD "
+#endif
+  "\n";
 
 static volatile unsigned char doLoop = 1;
 
@@ -113,32 +136,36 @@ struct __attribute__((__packed__)) cmd {
   char* path;
   char* defargs;
   unsigned char flags;
+  unsigned char argcount;
 };
 
-static struct cmd cmds[] = {
-  { "ether-wake", "/usr/bin/suid-ether-wake", "-b -i lan", NEED_ARGS },
-  { "ping", "/usr/bin/suid-ping", NULL, NEED_ARGS },
-  { "netstat-client", "/bin/netstat", "-pntu", NO_ARGS },
-  { "netstat-server", "/bin/netstat", "-lpn", NO_ARGS },
-  { "echo", "/bin/echo", NULL, NEED_ARGS },
-  { NULL, NULL, NULL, 0 }
+static const struct cmd cmds[] = {
+  { "ether-wake", "/usr/bin/suid-ether-wake", "-b -i lan", NEED_ARGS, 4 },
+  { "ping", "/usr/bin/suid-ping", "-c 5 -w 2", NEED_ARGS, 5 },
+  { "netstat-client", "/bin/netstat", "-pntu", NO_ARGS, 0 },
+  { "netstat-server", "/bin/netstat", "-lpn", NO_ARGS, 0 },
+  { "echo", "/bin/echo", NULL, NEED_ARGS, 0 },
+  { NULL, NULL, NULL, 0, 0 }
 };
 
 static void print_cmds(void)
 {
   size_t idx = 0;
   printf("\33[2K\r[COMMANDS]\n");
+  printf("  command [args][argcount]\n");
   while ( cmds[idx++].path != NULL ) {
-    printf("  [%lu] %s [%s]\n", (unsigned long int)idx-1,
+    printf("  [%lu] %s [%s][%d]\n", (unsigned long int)idx-1,
       ( cmds[idx-1].name != NULL ? cmds[idx-1].name : "unknown" ),
-      ( cmds[idx-1].defargs != NULL ? cmds[idx-1].defargs : "" ));
+      ( cmds[idx-1].defargs != NULL ? cmds[idx-1].defargs : "" ),
+      ( (cmds[idx-1].flags & NEED_ARGS) ? cmds[idx-1].argcount : -1 ));
   }
 }
 
-static int safe_exec(const char* cmdWithArgs)
+static int safe_exec(const char* cmdWithArgs, size_t maxArgs)
 {
   pid_t child;
   if ( (child = fork()) == 0 ) {
+    signal(SIGINT, SIG_IGN);
     size_t szCur = 0, szMax = 10;
     char** args = calloc(szMax, sizeof(char**));
     const char* cmd = NULL;
@@ -154,6 +181,9 @@ static int safe_exec(const char* cmdWithArgs)
         szMax *= 2;
         args = realloc(args, sizeof(char**)*szMax);
       }
+      if (maxArgs && szCur > maxArgs) { /* maxArgs + 1 --> arg0 */
+        exit(-4);
+      }
 
       cur++;
       prv = cur;
@@ -168,8 +198,8 @@ static int safe_exec(const char* cmdWithArgs)
     exit(-5);
   } else if (child != -1) {
     int retval = 0;
-    waitpid(child, &retval, 0);
-    return retval;
+    waitpid(child, &retval, 0); /* TODO: get more specific info about the exec'd proc (e.g. errno) */
+    return 0;
   }
   return -6;
 }
@@ -198,7 +228,7 @@ static int exec_cmd(size_t i, char* args, size_t szArgs)
       } else {
         snprintf(&execbuf[0], siz+1, "%s %s", cmds[idx].path, args);
       }
-      return safe_exec(&execbuf[0]);
+      return safe_exec(&execbuf[0], cmds[idx].argcount);
     }
   }
   return -7;
@@ -698,6 +728,7 @@ int main(int argc, char** argv)
                         case -7: printf("unknown cmd #%lu\n", tmpi); break;
                         case -6: printf("fork error cmd #%lu\n", tmpi); break;
                         case -5: printf("execute cmd #%lu\n", tmpi); break;
+                        case -4: printf("too many arguments for cmd #%lu\n", tmpi); break;
 
                         case 0: break;
                         default: printf("Something went wrong, child returned: %d\n", retval); break;
