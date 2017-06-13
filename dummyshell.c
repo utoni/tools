@@ -267,7 +267,7 @@ static int init_msg(void)
 struct __attribute__((__packed__)) msgHdr {
   uint8_t szFrom;
   uint8_t szMsg;
-  time_t timestamp;
+  uint64_t timestamp; /* works for x86 and x64 */
 };
 
 struct __attribute__((__packed__)) msg {
@@ -315,7 +315,7 @@ static int print_msg(void) {
       free(msg.from);
       msg.from = strdup(pwd->pw_name);
     }
-    if (localtime_r(&hdr.timestamp, &localtime) != NULL) {
+    if (localtime_r((const time_t*)&hdr.timestamp, &localtime) != NULL) {
       printf("\33[2K\r[%02d-%02d-%04d %02d:%02d:%02d] Message from %s: %s\n", localtime.tm_mday, localtime.tm_mon+1, 1900+localtime.tm_year, localtime.tm_hour, localtime.tm_min, localtime.tm_sec, msg.from, msg.msg);
     } else {
       printf("\33[2K\r\aMessage from %s: %s\n", msg.from, msg.msg);
@@ -488,8 +488,9 @@ static void print_memusage(void)
 #ifdef _HAS_SIGNAL
 void SigIntHandler(int signum)
 {
-  if (signum == SIGINT) {
-    doLoop = 0;
+  if (signum == SIGINT || signum == SIGTERM) {
+    printf("\33[2K\rRecieved Signal: %s\n", (signum == SIGINT ? "SIGINT" : "SIGTERM"));
+    printQuitLoop();
   }
 }
 #endif
@@ -519,6 +520,7 @@ int main(int argc, char** argv)
 
 #ifdef _HAS_SIGNAL
   signal(SIGINT, SigIntHandler);
+  signal(SIGTERM, SigIntHandler);
 #endif
 #ifdef FLOOD_PROTECTION
   unsigned char curInput = 0;
@@ -672,7 +674,7 @@ int main(int argc, char** argv)
               printf("<feature disabled>\n");
 #endif
               break;
-            default: printf("unknown key: %c\n", key); break;
+            default: if (doLoop) printf("unknown key: %c\n", key); break;
           }
           break;
         case MS_INFO:
@@ -752,5 +754,6 @@ int main(int argc, char** argv)
   while (getchar() != EOF) {}
 
   tcsetattr( STDIN_FILENO, TCSANOW, &oldt);
+  fcntl(STDIN_FILENO, F_SETFL, flags);
   return 0;
 }
