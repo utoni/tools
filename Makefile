@@ -52,7 +52,7 @@ xidle: xidle.o
 xdiff: xdiff.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	$(CC) $(LDFLAGS)  -o "$@" "$<" -lX11 -lXext -lXss
+	$(CC) $(LDFLAGS)  -o "$@" "$<" -lX11
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -60,9 +60,9 @@ strip:
 	strip -s $(TARGETS)
 
 clean:
-	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o xidle.o
-	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d xidle.d
-	-$(RM) aes asciihexer dummyshell gol suidcmd xidle
+	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o xidle.o xdiff.o
+	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d xidle.d xdiff.d
+	-$(RM) aes asciihexer dummyshell gol suidcmd xidle xdiff
 	-@echo ' '
 
 install: $(TARGETS)
