@@ -25,5 +25,9 @@ xidle.c
 ========
 Report XServer idle time (no cursor movement).<br />
 
+xdiff.c
+========
+Report X11 root window pixel diff (without cursor).<br />
+
 <br />
 Thats all folks.<br />

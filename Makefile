@@ -11,7 +11,7 @@ ifneq ($(strip $(MAKE_NCURSES)),)
 TARGETS += gol
 endif
 ifneq ($(strip $(MAKE_X11)),)
-TARGETS += xidle
+TARGETS += xidle xdiff
 endif
 
 
@@ -43,6 +43,13 @@ gol: gol.o
 	@echo ' '
 
 xidle: xidle.o
+	@echo 'Building target: $@'
+	@echo 'Invoking: GCC C Linker'
+	$(CC) $(LDFLAGS)  -o "$@" "$<" -lX11 -lXext -lXss
+	@echo 'Finished building target: $@'
+	@echo ' '
+
+xdiff: xdiff.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
 	$(CC) $(LDFLAGS)  -o "$@" "$<" -lX11 -lXext -lXss
