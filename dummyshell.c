@@ -123,7 +123,7 @@ static char readInput(char* buf, size_t* siz, size_t szMax, char key, int flags)
     default:
       if (isprint(key) && *siz < szMax)
         buf[(*siz)++] = key;
-        break;
+      break;
   }
   return key;
 }

@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 #include <string.h>    /* memset(...), strstr(...) */
 #include <sys/wait.h>
 #include <libgen.h>    /* basename(...) */
@@ -120,30 +121,52 @@ int main(int argc, char** argv)
   }
 
   struct stat buf;
+  if (lstat(argv[0], &buf) != 0) {
+    perror("lstat");
+    return 1;
+  }
+  if (!S_ISLNK(buf.st_mode)) {
+    printCmds();
+    return 0;
+  }
+
+  static char *real_arg0 = NULL;
+  real_arg0 = realpath(argv[0], NULL);
+  if (!real_arg0) {
+    perror("realpath");
+    return 1;
+  }
+
   if (stat(argv[0], &buf) != 0) {
     perror("stat");
+    return 1;
   }
   if ((buf.st_mode & S_ISUID) == 0) {
-    fprintf(stderr, "%s: not set suid\n", argv[0]);
+    fprintf(stderr, "%s: not suid\n", real_arg0);
     return 1;
   }
 
   const char* runpath = getCmd(argv[0]);
   if (!runpath) {
-    fprintf(stderr, "%s not runnable cmd\n", argv[0]);
+    fprintf(stderr, "%s: %s not runnable cmd\n", real_arg0, argv[0]);
     printCmds();
     return 1;
   }
 
+  if (stat(runpath, &buf) != 0) {
+    fprintf(stderr, "%s: %s error: %s\n", real_arg0, runpath, strerror(errno));
+    return 1;
+  }
+
   if (getresuid(&ruid, &euid, &suid) != 0) {
-    perror("getresuid()");
+    perror("getresuid");
   } else {
     printf("%s: RUID:%u , EUID:%u , SUID:%u\n", argv[0], ruid, euid, suid);
   }
 
-  if (setuid(0) != 0) {
-    perror("setuid(0)");
-  } else printf("%s: setuid(0)\n", argv[0]);
+  if (setresuid(0,0,0) != 0) {
+    perror("setresuid");
+  }
 
   char* cmd = NULL;
   if (asprintf(&cmd, "%s", runpath) <= 0) {
