@@ -38,9 +38,9 @@ enum ascii85_errs_e
     ascii85_err_decode_overflow
 };
 
-int32_t encode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, int32_t out_max_length);
+int32_t encode_ascii85 (const uint8_t *inp, int32_t in_length, char *outp, int32_t out_max_length);
 
-int32_t decode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, int32_t out_max_length);
+int32_t decode_ascii85 (const char *inp, int32_t in_length, uint8_t *outp, int32_t out_max_length);
 
 // From Wikipedia re: Ascii85 length...
 // Adobe adopted the basic btoa encoding, but with slight changes, and gave it the name Ascii85.
@@ -70,11 +70,8 @@ int32_t decode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, in
 static const uint8_t base_char = 33u; // '!' -- note that (85 + 33) < 128
 
 static const int32_t ascii85_in_length_max = 65536;
-
-static const bool ascii85_decode_z_for_zero  = true;
-static const bool ascii85_encode_z_for_zero  = true;
-
 static const bool ascii85_check_decode_chars = true;
+#define ENDECODE_NUL_AS_Z 1
 
 #if 0
 static inline bool ascii85_char_ok (uint8_t c)
@@ -92,13 +89,13 @@ static inline bool ascii85_char_ng (uint8_t c)
  * @brief encode_ascii85: encode binary input into Ascii85
  * @param[in] inp pointer to a buffer of unsigned bytes 
  * @param[in] in_length the number of bytes at inp to encode
- * @param[in] outp pointer to a buffer for the encoded data
+ * @param[in] outp pointer to a buffer for the encoded data as c-string
  * @param[in] out_max_length available space at outp in bytes; must be >= 5 * ceiling(in_length/4)
  * @return number of bytes in the encoded value at outp if non-negative; error code from
  * ascii85_errs_e if negative
  * @par Possible errors include: ascii85_err_in_buf_too_large, ascii85_err_out_buf_too_small
  */
-int32_t encode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, int32_t out_max_length)
+int32_t encode_ascii85 (const uint8_t *inp, int32_t in_length, char *outp, int32_t out_max_length)
 {
     // Note that (in_length + 3) below may overflow, but this is inconsequental
     // since ascii85_in_length_max is < (INT32_MAX - 3), and we check in_length before
@@ -140,11 +137,13 @@ int32_t encode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, in
                 chunk |= ((in_rover < in_length) ? (((uint32_t )inp[in_rover++])       ) : 0u);
             }
 
-            if (/*lint -e{506} -e{774}*/ascii85_encode_z_for_zero && (0u == chunk) && (chunk_len >= 4))
+#ifdef ENDECODE_NUL_AS_Z
+            if (/*lint -e{506} -e{774}*/ (0u == chunk) && (chunk_len >= 4))
             {
                 outp[out_length++] = (uint8_t )'z';
             }
             else
+#endif
             {
                 outp[out_length + 4] = (chunk % 85u) + base_char;
                 chunk /= 85u;
@@ -174,7 +173,7 @@ int32_t encode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, in
 
 /*!
  * @brief decode_ascii85: decode Ascii85 input to binary output
- * @param[in] inp pointer to a buffer of Ascii85 encoded unsigned bytes 
+ * @param[in] inp pointer to a buffer of Ascii85 encoded c-string
  * @param[in] in_length the number of bytes at inp to decode
  * @param[in] outp pointer to a buffer for the decoded data
  * @param[in] out_max_length available space at outp in bytes; must be >= 4 * ceiling(in_length/5)
@@ -183,7 +182,7 @@ int32_t encode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, in
  * @par Possible errors include: ascii85_err_in_buf_too_large, ascii85_err_out_buf_too_small, 
  * ascii85_err_bad_decode_char, ascii85_err_decode_overflow
  */
-int32_t decode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, int32_t out_max_length)
+int32_t decode_ascii85 (const char *inp, int32_t in_length, uint8_t *outp, int32_t out_max_length)
 {
     // Note that (in_length + 4) below may overflow, but this is inconsequental
     // since ascii85_in_length_max is < (INT32_MAX - 4), and we check in_length before
@@ -210,13 +209,16 @@ int32_t decode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, in
             uint32_t chunk;
             int32_t chunk_len = in_length - in_rover;
 
-            if (/*lint -e{506} -e{774}*/ascii85_decode_z_for_zero && ((uint8_t )'z' == inp[in_rover]))
+#ifdef ENDECODE_NUL_AS_Z
+            if (/*lint -e{506} -e{774}*/ ((uint8_t )'z' == inp[in_rover]))
             {
                 in_rover += 1;
                 chunk = 0u;
                 chunk_len = 5; // to make out_length increment correct
             }
-            else if (/*lint -e{506} -e{774}*/ascii85_check_decode_chars
+            else
+#endif
+            if (/*lint -e{506} -e{774}*/ascii85_check_decode_chars
                     && (                       ascii85_char_ng(inp[in_rover    ])
                         || ((chunk_len > 1) && ascii85_char_ng(inp[in_rover + 1]))
                         || ((chunk_len > 2) && ascii85_char_ng(inp[in_rover + 2]))
@@ -319,10 +321,14 @@ int32_t decode_ascii85 (const uint8_t *inp, int32_t in_length, uint8_t *outp, in
 }
 
 int main(int argc, char **argv) {
-    uint8_t out_enc[BUFSIZ], out_dec[BUFSIZ];
+    char out_enc[BUFSIZ];
+    uint8_t out_dec[BUFSIZ];
     size_t buflen;
     int32_t siz_enc, siz_dec;
 
+#if ENDECODE_NUL_AS_Z
+    printf("Encoding NUL characters won't work from cmdline!\n");
+#endif
     if (argc != 2) {
         printf("usage: %s [BINARY-DATA]\n", (argc > 0 ? argv[0] : "null"));
         exit(1);
@@ -336,6 +342,12 @@ int main(int argc, char **argv) {
     printf("Encoded: \"%.*s\"\n", siz_enc, (char *) out_enc);
     siz_dec = decode_ascii85(out_enc, siz_enc, out_dec, sizeof out_dec - 1);
     printf("Decoded: \"%.*s\"\n", siz_dec, (char *) out_dec);
+
+    if ((int32_t) buflen == siz_dec &&
+        memcmp(out_dec, argv[1], buflen) == 0)
+    {
+        printf("%s: Ok!\n", argv[0]);
+    } else printf("%s: FAIL!\n", argv[0]);
 
     return 0;
 }
