@@ -3,9 +3,8 @@ INSTALL := install
 CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
 LDFLAGS :=
 RM := rm -rf
-LIBS := -lcurses
 
-TARGETS := aes asciihexer dummyshell suidcmd
+TARGETS := aes asciihexer dummyshell suidcmd scrambler
 
 ifneq ($(strip $(MAKE_NCURSES)),)
 TARGETS += gol
@@ -35,6 +34,13 @@ suidcmd: suidcmd.o
 	@echo 'Finished building target: $@'
 	@echo ' '
 
+scrambler: scrambler.o
+	@echo 'Building target: $@'
+	@echo 'Invoking: GCC C Linker'
+	$(CC) $(LDFLAGS)  -o "$@" "$<" -lm
+	@echo 'Finished building target: $@'
+	@echo ' '
+
 gol: gol.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
@@ -60,9 +66,9 @@ strip:
 	strip -s $(TARGETS)
 
 clean:
-	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o xidle.o xdiff.o
-	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d xidle.d xdiff.d
-	-$(RM) aes asciihexer dummyshell gol suidcmd xidle xdiff
+	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o scrambler.o xidle.o xdiff.o
+	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d scrambler.d xidle.d xdiff.d
+	-$(RM) aes asciihexer dummyshell gol suidcmd scrambler xidle xdiff
 	-@echo ' '
 
 install: $(TARGETS)
