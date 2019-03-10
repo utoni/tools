@@ -4,7 +4,7 @@ CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-fr
 LDFLAGS :=
 RM := rm -rf
 
-TARGETS := aes asciihexer dummyshell suidcmd scrambler
+TARGETS := aes asciihexer dummyshell suidcmd scrambler textify
 
 ifneq ($(strip $(MAKE_NCURSES)),)
 TARGETS += gol
@@ -35,6 +35,13 @@ suidcmd: suidcmd.o
 	@echo ' '
 
 scrambler: scrambler.o
+	@echo 'Building target: $@'
+	@echo 'Invoking: GCC C Linker'
+	$(CC) $(LDFLAGS)  -o "$@" "$<" -lm
+	@echo 'Finished building target: $@'
+	@echo ' '
+
+textify: textify.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
 	$(CC) $(LDFLAGS)  -o "$@" "$<" -lm
