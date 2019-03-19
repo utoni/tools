@@ -108,7 +108,7 @@ static void printQuitLoop(void) {
 }
 
 #define I_CLEARBUF 0x1
-static char readInput(char* buf, size_t* siz, size_t szMax, char key, int flags) {
+static char readInput(char* buf, size_t* siz, size_t szMax, int key, int flags) {
   if (flags & I_CLEARBUF) {
     memset(&buf[0], '\0', szMax);
     *siz = 0;
@@ -634,7 +634,7 @@ int main(int argc, char** argv)
       curInput = 0;
 #endif
     } else if (FD_ISSET(STDIN_FILENO, &fds)) {
-      char key = getchar();
+      int key = getchar();
       switch (state) {
         case MS_DEFAULT:
 #ifdef FLOOD_PROTECTION
