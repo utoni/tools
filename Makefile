@@ -1,5 +1,6 @@
 CC := gcc
-INSTALL := install
+INSTALL_DIR := install -d
+INSTALL_BIN := install -s
 CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
 LDFLAGS :=
 RM := rm -rf
@@ -79,8 +80,8 @@ clean:
 	-@echo ' '
 
 install: $(TARGETS)
-	$(INSTALL) -d $(PREFIX)/usr/bin
-	$(INSTALL) -s $(TARGETS) $(PREFIX)/usr/bin
+	$(INSTALL_DIR) -d $(PREFIX)/usr/bin
+	$(INSTALL_BIN) -s $(TARGETS) $(PREFIX)/usr/bin
 
 rebuild: clean all
 
