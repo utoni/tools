@@ -73,9 +73,9 @@ strip:
 	strip -s $(TARGETS)
 
 clean:
-	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o scrambler.o xidle.o xdiff.o
-	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d scrambler.d xidle.d xdiff.d
-	-$(RM) aes asciihexer dummyshell gol suidcmd scrambler xidle xdiff
+	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o scrambler.o textify.o xidle.o xdiff.o
+	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d scrambler.d textify.d xidle.d xdiff.d
+	-$(RM) aes asciihexer dummyshell gol suidcmd scrambler textify xidle xdiff
 	-@echo ' '
 
 install: $(TARGETS)
