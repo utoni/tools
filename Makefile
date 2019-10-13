@@ -4,7 +4,7 @@ CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-fr
 LDFLAGS :=
 RM := rm -rf
 
-TARGETS := aes asciihexer dummyshell suidcmd scrambler textify
+TARGETS := aes asciihexer dummyshell suidcmd scrambler textify progressbar
 
 ifneq ($(strip $(MAKE_NCURSES)),)
 TARGETS += gol
@@ -66,6 +66,13 @@ xdiff: xdiff.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
 	$(CC) $(LDFLAGS)  -o "$@" "$<" -lX11
+	@echo 'Finished building target: $@'
+	@echo ' '
+
+progressbar: progressbar.o
+	@echo 'Building target: $@'
+	@echo 'Invoking: GCC C Linker'
+	$(CC) $(LDFLAGS)  -o "$@" "$<"
 	@echo 'Finished building target: $@'
 	@echo ' '
 
