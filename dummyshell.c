@@ -131,7 +131,7 @@ static char readInput(char* buf, size_t* siz, size_t szMax, int key, int flags) 
 #ifdef _HAS_CMD
 #define NO_ARGS   0b00000001
 #define NEED_ARGS 0b00000010
-struct __attribute__((__packed__)) cmd {
+struct cmd {
   char* name;
   char* path;
   char* defargs;
@@ -264,13 +264,13 @@ static int init_msg(void)
   return 0;
 }
 
-struct __attribute__((__packed__)) msgHdr {
+struct msgHdr {
   uint8_t szFrom;
   uint8_t szMsg;
   uint64_t timestamp; /* works for x86 and x64 */
 };
 
-struct __attribute__((__packed__)) msg {
+struct msg {
   char* from;
   char* msg;
 };
