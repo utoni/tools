@@ -5,7 +5,7 @@ CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-fr
 LDFLAGS :=
 RM := rm -rf
 
-TARGETS := aes asciihexer dummyshell suidcmd ascii85 textify progressbar
+TARGETS := aes asciihexer dummyshell suidcmd ascii85 progressbar
 
 ifneq ($(strip $(MAKE_NCURSES)),)
 TARGETS += gol
@@ -36,13 +36,6 @@ suidcmd: suidcmd.o
 	@echo ' '
 
 ascii85: ascii85.o
-	@echo 'Building target: $@'
-	@echo 'Invoking: GCC C Linker'
-	$(CC) $(LDFLAGS)  -o "$@" "$<" -lm
-	@echo 'Finished building target: $@'
-	@echo ' '
-
-textify: textify.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
 	$(CC) $(LDFLAGS)  -o "$@" "$<" -lm
@@ -81,9 +74,9 @@ strip:
 	strip -s $(TARGETS)
 
 clean:
-	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o ascii85.o textify.o progressbar.o xidle.o xdiff.o
-	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d scrambler.d textify.d progressbar.d xidle.d xdiff.d
-	-$(RM) aes asciihexer dummyshell gol suidcmd scrambler textify progressbar xidle xdiff
+	-$(RM) aes.o asciihexer.o dummyshell.o gol.o suidcmd.o ascii85.o progressbar.o xidle.o xdiff.o
+	-$(RM) aes.d asciihexer.d dummyshell.d gol.d suidcmd.d scrambler.d progressbar.d xidle.d xdiff.d
+	-$(RM) aes asciihexer dummyshell gol suidcmd scrambler progressbar xidle xdiff
 	-@echo ' '
 
 install: $(TARGETS)
