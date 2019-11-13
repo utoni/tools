@@ -74,6 +74,88 @@ static void free_filtered_dir_entries(struct filtered_dir_entries * const entrie
     entries->entries_num = 0;
 }
 
+enum proc_subdir_type {
+    PROC_SUBDIR_FD, PROC_SUBDIR_FDINFO
+};
+
+static int open_in_procfs(const char * const pid, const char * const fd, enum proc_subdir_type type)
+{
+    char proc_path[BUFSIZ];
+    const char * subdir_path = NULL;
+
+    switch (type) {
+        case PROC_SUBDIR_FD:
+            subdir_path = "fd";
+            break;
+        case PROC_SUBDIR_FDINFO:
+            subdir_path = "fdinfo";
+            break;
+        default:
+            return -1;
+    }
+
+    if (snprintf(proc_path, sizeof proc_path, "%s/%s/%s/%s", "/proc", pid, subdir_path, fd) <= 0) {
+        return -1;
+    }
+
+    int proc_fd = open(proc_path, 0);
+    if (proc_fd < 0) {
+        perror("open proc_fd");
+        return -1;
+    }
+
+    return proc_fd;
+}
+
+struct file_info {
+    int proc_fdinfo_fd;
+    long int current_position;
+    long int max_size;
+};
+
+static int setup_file_info(struct file_info * const finfo, int proc_fd_fd, int proc_fdinfo_fd)
+{
+    struct stat buf;
+
+    if (fstat(proc_fd_fd, &buf)) {
+        perror("setup_file_info: fstat");
+        return -1;
+    }
+
+    finfo->proc_fdinfo_fd = proc_fdinfo_fd;
+    finfo->current_position = 0;
+    finfo->max_size = buf.st_size;
+    return 0;
+}
+
+static int read_and_parse_fd_pos(struct file_info * const finfo)
+{
+    ssize_t nread;
+    char proc_fdinfo[BUFSIZ];
+    static const char needle[] = "pos:\t";
+    char * pospos;
+
+    if (lseek(finfo->proc_fdinfo_fd, 0, SEEK_SET) < 0) {
+        return -1;
+    }
+
+    nread = read(finfo->proc_fdinfo_fd, &proc_fdinfo[0], sizeof proc_fdinfo);
+    if (nread <= 0) {
+        return -1;
+    }
+    proc_fdinfo[nread - 1] = '\0';
+
+    pospos = strstr(&proc_fdinfo[0], &needle[0]);
+    if (!pospos) {
+        return 1;
+    }
+    pospos += (sizeof(needle) - 1) / sizeof(needle[0]);
+
+    finfo->current_position = strtoul(pospos, NULL, 10);
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     struct filtered_dir_entries proc_pid_entries = {};
@@ -137,54 +219,30 @@ int main(int argc, char **argv)
 
     printf("PID: %s, FD: %s, FILE: '%.*s'\n", pid, fd, (int)realpath_used, file_realpath);
 
-    char proc_fd_path[BUFSIZ];
-    if (snprintf(proc_fd_path, sizeof proc_fd_path, "%s/%s/fd/%s", "/proc", pid, fd) <= 0) {
-        exit(EXIT_FAILURE);
-    }
-
-    int proc_fd_fd = open(proc_fd_path, 0);
+    int proc_fd_fd = open_in_procfs(pid, fd, PROC_SUBDIR_FD);
     if (proc_fd_fd < 0) {
         perror("open proc_fd");
         exit(EXIT_FAILURE);
     }
 
-    struct stat buf = {};
-    if (fstat(proc_fd_fd, &buf)) {
-        perror("stat proc_fd");
-        exit(EXIT_FAILURE);
-    }
-    close(proc_fd_fd);
-
-    printf("Total size: %lld\n", (long long) buf.st_size);
-
-    char proc_fdinfo_path[BUFSIZ];
-    if (snprintf(proc_fdinfo_path, sizeof proc_fdinfo_path, "%s/%s/fdinfo/%s", "/proc", pid, fd) <= 0) {
-        exit(EXIT_FAILURE);
-    }
-
-    int proc_fdinfo_fd = open(proc_fdinfo_path, 0);
+    int proc_fdinfo_fd = open_in_procfs(pid, fd, PROC_SUBDIR_FDINFO);
     if (proc_fdinfo_fd < 0) {
         perror("open proc_fdinfo");
         exit(EXIT_FAILURE);
     }
 
-    ssize_t nread;
-    char proc_fdinfo[BUFSIZ];
-    nread = read(proc_fdinfo_fd, &proc_fdinfo[0], sizeof proc_fdinfo);
-    if (nread <= 0) {
-        perror("read proc_fdinfo");
+    struct file_info finfo;
+    if (setup_file_info(&finfo, proc_fd_fd, proc_fdinfo_fd)) {
         exit(EXIT_FAILURE);
     }
-    proc_fdinfo[nread - 1] = '\0';
-    close(proc_fdinfo_fd);
+    close(proc_fd_fd);
 
-    static const char needle[] = "pos:\t";
-    char * pospos = strstr(&proc_fdinfo[0], &needle[0]);
-    if (!pospos) {
-        exit(EXIT_FAILURE);
+    while (!read_and_parse_fd_pos(&finfo)) {
+        printf("\r[%ld..%ld] ", finfo.current_position, finfo.max_size);
+        fflush(stdout);
+        sleep(1);
     }
-    pospos += (sizeof(needle) - 1) / sizeof(needle[0]);
+    puts("\n");
 
-    unsigned long long int current_position = strtoull(pospos, NULL, 10);
-    printf("Current position: %llu\n", current_position);
+    close(finfo.proc_fdinfo_fd);
 }
