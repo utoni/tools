@@ -2,12 +2,14 @@
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include <stdbool.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 
 
 struct filtered_dir_entries {
@@ -111,6 +113,12 @@ struct file_info {
     int proc_fdinfo_fd;
     long int current_position;
     long int max_size;
+    struct {
+        struct winsize dimensions;
+        char output[BUFSIZ];
+        size_t printable_chars;
+        size_t unprintable_chars;
+    } terminal;
 };
 
 static int setup_file_info(struct file_info * const finfo, int proc_fd_fd, int proc_fdinfo_fd)
@@ -154,6 +162,144 @@ static int read_and_parse_fd_pos(struct file_info * const finfo)
     finfo->current_position = strtoul(pospos, NULL, 10);
 
     return 0;
+}
+
+static int reset_terminal_output(struct file_info * const finfo)
+{
+    finfo->terminal.output[0] = '\r';
+    finfo->terminal.output[1] = '\0';
+    finfo->terminal.unprintable_chars = 1;
+    finfo->terminal.printable_chars = 0;
+    return ioctl(0, TIOCGWINSZ, &finfo->terminal.dimensions);
+}
+
+static size_t remaining_printable_chars(struct file_info * const finfo)
+{
+    return finfo->terminal.dimensions.ws_col -
+           strnlen(finfo->terminal.output, finfo->terminal.printable_chars);
+}
+
+static int vadd_printable_buf(struct file_info * const finfo, const char * format, va_list ap)
+{
+    char tmp_buf[BUFSIZ];
+    int snprintf_retval;
+    size_t remaining_len;
+
+    remaining_len = remaining_printable_chars(finfo);
+    if (!remaining_len) {
+        return -1;
+    }
+
+    snprintf_retval = vsnprintf(tmp_buf,  sizeof tmp_buf, format, ap);
+    if (snprintf_retval > 0) {
+        if (snprintf_retval > remaining_len) {
+            return -1;
+        }
+        memcpy(finfo->terminal.output + finfo->terminal.printable_chars +
+               finfo->terminal.unprintable_chars,
+               tmp_buf, snprintf_retval);
+        finfo->terminal.printable_chars += snprintf_retval;
+    }
+    return snprintf_retval;
+}
+
+static int add_printable_buf(struct file_info * const finfo, const char * format, ...)
+{
+    int ret;
+    va_list ap;
+
+    va_start(ap, format);
+    ret = vadd_printable_buf(finfo, format, ap);
+    va_end(ap);
+    return ret;
+}
+
+enum unit_prefix {
+    NONE, KILO, MEGA, GIGA
+};
+
+static enum unit_prefix choose_appropriate_unit(long int bytes, float *result)
+{
+    float pretty_bytes;
+
+    pretty_bytes = (float)bytes / (1024.0f * 1024.0f * 1024.0f);
+    if (pretty_bytes >= 1.0f) {
+        *result = pretty_bytes;
+        return GIGA;
+    }
+
+    pretty_bytes = (float)bytes / (1024.0f * 1024.0f);
+    if (pretty_bytes >= 1.0f) {
+        *result = pretty_bytes;
+        return MEGA;
+    }
+
+    pretty_bytes = (float)bytes / 1024.0f;
+    if (pretty_bytes >= 1.0f) {
+        *result = pretty_bytes;
+        return KILO;
+    }
+
+    return NONE;
+}
+
+static void prettify_with_units(long int bytes, char * buf, size_t siz)
+{
+    float unit_bytes = 0.0f;
+    enum unit_prefix up = choose_appropriate_unit(bytes, &unit_bytes);
+
+    switch (up) {
+        case KILO:
+            snprintf(buf, siz, "%.2fK", unit_bytes);
+            break;
+        case MEGA:
+            snprintf(buf, siz, "%.2fM", unit_bytes);
+            break;
+        case GIGA:
+            snprintf(buf, siz, "%.2fG", unit_bytes);
+            break;
+
+        case NONE:
+        default:
+            snprintf(buf, siz, "%ld", bytes);
+            break;
+    }
+}
+
+static void show_positions(struct file_info * const finfo)
+{
+    char curpos[66];
+    char maxpos[66];
+
+    prettify_with_units(finfo->current_position, curpos, sizeof curpos);
+    prettify_with_units(finfo->max_size, maxpos, sizeof maxpos);
+
+    add_printable_buf(finfo, "[%s..%s]", curpos, maxpos);
+}
+
+static void show_progressbar(struct file_info * const finfo)
+{
+    char buf[BUFSIZ];
+    size_t remaining_len;
+
+    remaining_len = remaining_printable_chars(finfo);
+    if (remaining_len < 8 || remaining_len >= sizeof buf) {
+        return;
+    }
+
+    float progress = (float)finfo->current_position / finfo->max_size;
+    add_printable_buf(finfo, "[%.2f%%]", progress * 100.0f);
+
+    remaining_len = remaining_printable_chars(finfo);
+    if (remaining_len < 3 || remaining_len >= sizeof buf) {
+        return;
+    }
+
+    float printable_progress = progress * remaining_len;
+    memset(buf, '-', remaining_len - 2);
+    memset(buf, '#', (size_t)printable_progress);
+    buf[remaining_len - 2] = '\0';
+    add_printable_buf(finfo, "[%s]", buf);
 }
 
 int main(int argc, char **argv)
@@ -231,14 +377,20 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    struct file_info finfo;
+    struct file_info finfo = {};
     if (setup_file_info(&finfo, proc_fd_fd, proc_fdinfo_fd)) {
         exit(EXIT_FAILURE);
     }
     close(proc_fd_fd);
 
     while (!read_and_parse_fd_pos(&finfo)) {
-        printf("\r[%ld..%ld] ", finfo.current_position, finfo.max_size);
+        if (reset_terminal_output(&finfo) < 0) {
+            break;
+        }
+        show_positions(&finfo);
+        show_progressbar(&finfo);
+
+        printf("%s", finfo.terminal.output);
         fflush(stdout);
         sleep(1);
     }
