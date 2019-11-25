@@ -192,7 +192,7 @@ static int vadd_printable_buf(struct file_info * const finfo, const char * forma
 
     snprintf_retval = vsnprintf(tmp_buf,  sizeof tmp_buf, format, ap);
     if (snprintf_retval > 0) {
-        if (snprintf_retval > remaining_len) {
+        if ((size_t)snprintf_retval > remaining_len) {
             return -1;
         }
         memcpy(finfo->terminal.output + finfo->terminal.printable_chars +
@@ -214,11 +214,11 @@ static int add_printable_buf(struct file_info * const finfo, const char * format
     return ret;
 }
 
-enum unit_prefix {
+enum unit_suffix {
     NONE, KILO, MEGA, GIGA
 };
 
-static enum unit_prefix choose_appropriate_unit(long int bytes, float *result)
+static enum unit_suffix choose_appropriate_unit(long int bytes, float *result)
 {
     float pretty_bytes;
 
@@ -246,7 +246,7 @@ static enum unit_prefix choose_appropriate_unit(long int bytes, float *result)
 static void prettify_with_units(long int bytes, char * buf, size_t siz)
 {
     float unit_bytes = 0.0f;
-    enum unit_prefix up = choose_appropriate_unit(bytes, &unit_bytes);
+    enum unit_suffix up = choose_appropriate_unit(bytes, &unit_bytes);
 
     switch (up) {
         case KILO:
@@ -307,7 +307,7 @@ int main(int argc, char **argv)
     struct filtered_dir_entries proc_pid_entries = {};
     struct filtered_dir_entries proc_fd_entries = {};
     ssize_t realpath_used;
-    size_t target_filepath_len;
+    ssize_t target_filepath_len;
     char file_realpath[BUFSIZ] = {};
     char pid[32];
     char fd[32];
