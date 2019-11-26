@@ -12,6 +12,9 @@
 #include <sys/ioctl.h>
 #include <time.h>
 
+#define MAX_CMDLINE_LEN 512
+#define MAX_TERMINAL_LEN 2048
+
 
 struct filtered_dir_entries {
     struct dirent ** entries;
@@ -114,9 +117,10 @@ struct file_info {
     int proc_fdinfo_fd;
     long int current_position;
     long int max_size;
+    char cmdline[MAX_CMDLINE_LEN];
     struct {
         struct winsize dimensions;
-        char output[BUFSIZ];
+        char output[MAX_TERMINAL_LEN];
         size_t printable_chars;
         size_t unprintable_chars;
     } terminal;
@@ -165,6 +169,28 @@ static int read_and_parse_fd_pos(struct file_info * const finfo)
     return 0;
 }
 
+static int read_proc_cmdline(struct file_info * const finfo,
+                             const char * const proc_pid)
+{
+    int cmdline_fd;
+    char buf[MAX_CMDLINE_LEN];
+
+    if (snprintf(buf, sizeof buf, "%s/%s/cmdline",
+                 "/proc", proc_pid) <= 0)
+    {
+        finfo->cmdline[0] = '\0';
+        return -1;
+    }
+    cmdline_fd = open(buf, 0);
+    if (read(cmdline_fd, buf, sizeof buf) <= 0)
+    {
+        finfo->cmdline[0] = '\0';
+        return -1;
+    }
+
+    return snprintf(finfo->cmdline, sizeof finfo->cmdline, "%.*s (%s)", MAX_CMDLINE_LEN - 35, buf, proc_pid);
+}
+
 static int reset_terminal_output(struct file_info * const finfo)
 {
     finfo->terminal.output[0] = '\r';
@@ -182,7 +208,7 @@ static size_t remaining_printable_chars(struct file_info * const finfo)
 
 static int vadd_printable_buf(struct file_info * const finfo, const char * format, va_list ap)
 {
-    char tmp_buf[BUFSIZ];
+    char tmp_buf[MAX_TERMINAL_LEN];
     int snprintf_retval;
     size_t remaining_len;
 
@@ -373,8 +399,6 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    printf("PID: %s, FD: %s, FILE: '%.*s'\n", pid, fd, (int)realpath_used, file_realpath);
-
     int proc_fd_fd = open_in_procfs(pid, fd, PROC_SUBDIR_FD);
     if (proc_fd_fd < 0) {
         perror("open proc_fd");
@@ -392,6 +416,10 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
     close(proc_fd_fd);
+
+    read_proc_cmdline(&finfo, pid);
+    printf("FD..: '/proc/%s/fd/%s'\nFILE: '%.*s'\nCMD.: %s\n",
+           pid, fd, (int)realpath_used, file_realpath, finfo.cmdline);
 
     while (!read_and_parse_fd_pos(&finfo)) {
         if (reset_terminal_output(&finfo) < 0) {
