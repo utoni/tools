@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#include <time.h>
 
 
 struct filtered_dir_entries {
@@ -302,6 +303,15 @@ static void show_progressbar(struct file_info * const finfo)
     add_printable_buf(finfo, "[%s]", buf);
 }
 
+static int nsleep(unsigned long long int nanosecs)
+{
+    struct timespec tim;
+    tim.tv_sec = 0;
+    tim.tv_nsec = nanosecs;
+
+    return nanosleep(&tim , NULL);
+}
+
 int main(int argc, char **argv)
 {
     struct filtered_dir_entries proc_pid_entries = {};
@@ -392,7 +402,7 @@ int main(int argc, char **argv)
 
         printf("%s", finfo.terminal.output);
         fflush(stdout);
-        sleep(1);
+        nsleep(150000000L);
     }
     puts("\n");
 
