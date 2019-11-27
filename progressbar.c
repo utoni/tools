@@ -338,6 +338,102 @@ static int nsleep(unsigned long long int nanosecs)
     return nanosleep(&tim , NULL);
 }
 
+struct pid_file_tuple {
+    char pid[32];
+    char fd[32];
+};
+
+static void iterate_pid_file(const char * const target_path, ssize_t target_filepath_len,
+                             int(*pdt_callback)(struct pid_file_tuple pdt, void * const user_ptr),
+                             void * const user_ptr)
+{
+    struct filtered_dir_entries proc_pid_entries = {};
+    struct filtered_dir_entries proc_fd_entries = {};
+    ssize_t realpath_used;
+    char file_realpath[BUFSIZ] = {};
+
+    if (search_dir("/proc", dirent_filter_only_numeric, &proc_pid_entries)) {
+        exit(EXIT_FAILURE);
+    }
+    for (size_t i = 0; i < proc_pid_entries.entries_num; ++i) {
+        if (search_procfs_fd("/proc", proc_pid_entries.entries[i]->d_name,
+                             &proc_fd_entries)) {
+            continue;
+        }
+
+        for (size_t j = 0; j < proc_fd_entries.entries_num; ++j) {
+            realpath_used = realpath_procfs_fd("/proc",
+                                proc_pid_entries.entries[i]->d_name,
+                                proc_fd_entries.entries[j]->d_name,
+                                &file_realpath[0], sizeof file_realpath);
+            if (realpath_used <= 0) {
+                continue;
+            }
+            file_realpath[realpath_used] = '\0';
+            if (realpath_used == target_filepath_len) {
+                if (!strncmp(target_path, file_realpath, realpath_used)) {
+                    struct pid_file_tuple pdt;
+                    if (snprintf(pdt.pid, sizeof pdt.pid, "%s", proc_pid_entries.entries[i]->d_name) <= 0) {
+                        continue;
+                    }
+                    if (snprintf(pdt.fd, sizeof pdt.fd, "%s", proc_fd_entries.entries[j]->d_name) <= 0) {
+                        continue;
+                    }
+                    if (pdt_callback(pdt, user_ptr)) {
+                        continue;
+                    }
+                }
+            }
+        }
+        free_filtered_dir_entries(&proc_fd_entries);
+    }
+    free_filtered_dir_entries(&proc_pid_entries);
+}
+
+#define PFT_INITIAL_SIZE 2
+struct pid_file_tuple_array {
+    size_t cur_size;
+    size_t max_size;
+    struct pid_file_tuple array[PFT_INITIAL_SIZE];
+};
+
+static int save_proc_entry_callback(struct pid_file_tuple pdt, struct pid_file_tuple_array ** const array)
+{
+    if (!array) {
+        return 1;
+    }
+
+    if (!*array || (*array)->cur_size == (*array)->max_size) {
+        size_t new_size = PFT_INITIAL_SIZE;
+        size_t cur_size = 0;
+
+        if (*array) {
+            new_size = (*array)->max_size * 2;
+            cur_size = (*array)->cur_size;
+        }
+        *array = (struct pid_file_tuple_array * ) realloc(*array, new_size * sizeof (*array)->array);
+        (*array)->max_size = new_size;
+        (*array)->cur_size = cur_size + 1;
+    }
+
+    if (!*array) {
+        return 1;
+    }
+
+    strncpy((*array)->array[(*array)->cur_size - 1].pid,
+            pdt.pid, sizeof (*array)->array[(*array)->cur_size - 1].pid);
+    strncpy((*array)->array[(*array)->cur_size - 1].fd,
+            pdt.fd, sizeof (*array)->array[(*array)->cur_size - 1].fd);
+
+    return 0;
+}
+
+static size_t collect_filepaths_from_procfs(struct pid_file_tuple_array ** const array)
+{
+    (void) array;
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     struct filtered_dir_entries proc_pid_entries = {};
