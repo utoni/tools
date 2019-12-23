@@ -185,11 +185,12 @@ static int read_and_parse_fd_pos(struct file_info * const finfo)
     return 0;
 }
 
-static int read_proc_cmdline(char * dest, size_t size,
+static void read_proc_cmdline(char * dest, size_t size,
                              const char * const proc_pid)
 {
     int cmdline_fd;
     char buf[MAX_CMDLINE_LEN];
+    ssize_t bytes_read;
 
     assert(dest && size && proc_pid);
 
@@ -197,17 +198,20 @@ static int read_proc_cmdline(char * dest, size_t size,
                  "/proc", proc_pid) <= 0)
     {
         dest[0] = '\0';
-        return -1;
     }
     cmdline_fd = open(buf, 0);
-    if (read(cmdline_fd, buf, sizeof buf) <= 0)
-    {
+    bytes_read = read(cmdline_fd, buf, sizeof buf);
+    if (bytes_read <= 0) {
         dest[0] = '\0';
-        return -1;
     }
     close(cmdline_fd);
 
-    return snprintf(dest, size, "%.*s", MAX_CMDLINE_LEN, buf);
+    while (--bytes_read) {
+        if (buf[bytes_read - 1] == '\0') {
+            buf[bytes_read - 1] = ' ';
+        }
+    }
+    strncpy(dest, buf, size);
 }
 
 static int reset_terminal_output(struct file_info * const finfo)
