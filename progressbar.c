@@ -207,7 +207,7 @@ static int read_proc_cmdline(char * dest, size_t size,
     }
     close(cmdline_fd);
 
-    return snprintf(dest, size, "%.*s (%s)", MAX_CMDLINE_LEN - 35, buf, proc_pid);
+    return snprintf(dest, size, "%.*s", MAX_CMDLINE_LEN, buf);
 }
 
 static int reset_terminal_output(struct file_info * const finfo)
@@ -374,31 +374,72 @@ static int nsleep(unsigned long long int nanosecs)
 }
 
 struct filepath {
+    int wanted;
+    int proc_fd_fd;
+    int proc_fdinfo_fd;
     char pid[32];
     char fd[32];
     char cmdline[MAX_CMDLINE_LEN];
     struct filepath * next;
 };
 
-static int choose_filepath(struct filepath * fp)
+static void printf_cmd_info(size_t index, struct filepath const * const fp)
 {
-    size_t choice = 0, current = 0;
+    if (index) {
+        printf("[%zu]['/proc/%s/fd/%s'] '%s'\n", index, fp->pid, fp->fd, fp->cmdline);
+    } else {
+        printf("['/proc/%s/fd/%s'] '%s'\n", fp->pid, fp->fd, fp->cmdline);
+    }
+}
+
+static void open_procfs_paths(struct filepath * const cur)
+{
+    cur->proc_fd_fd = open_in_procfs(cur->pid, cur->fd, PROC_SUBDIR_FD);
+    if (cur->proc_fd_fd < 0) {
+        perror("open proc_fd");
+        exit(EXIT_FAILURE);
+    }
+
+    cur->proc_fdinfo_fd = open_in_procfs(cur->pid, cur->fd, PROC_SUBDIR_FDINFO);
+    if (cur->proc_fdinfo_fd < 0) {
+        perror("open proc_fdinfo");
+        exit(EXIT_FAILURE);
+    }
+
+    cur->wanted = 1;
+}
+
+static int choose_filepath(struct filepath * const filepath)
+{
+    struct filepath * next;
+    size_t choice = 0, menu_index = 0;
 
     puts("Choose file to watch ..\n");
-    while (fp && ++current) {
-        struct filepath * cur = fp;
-        fp = fp->next;
+    next = filepath;
+    while (next && ++menu_index) {
+        struct filepath * cur = next;
+        next = next->next;
 
         read_proc_cmdline(cur->cmdline, sizeof cur->cmdline, cur->pid);
-        printf("[%zu] %s (%s) fd %s\n", current, cur->cmdline, cur->pid, cur->fd);
+        printf_cmd_info(menu_index, cur);
     }
 
     printf("\nYour choice: ");
-    if (scanf("%zu", &choice) != 1 || choice > current || !choice) {
+    if (scanf("%zu", &choice) != 1 || choice > menu_index || !choice) {
         return 1;
     }
 
-    printf("_%zu_\n", choice);
+    next = filepath;
+    menu_index = 0;
+    while (next && ++menu_index) {
+        struct filepath * cur = next;
+        next = next->next;
+
+        if (menu_index == choice) {
+            open_procfs_paths(cur);
+        }
+    }
+
     return 0;
 }
 
@@ -410,7 +451,7 @@ int main(int argc, char **argv)
     char file_realpath[BUFSIZ] = {};
     size_t found_targets = 0;
     struct filepath * paths = NULL;
-    struct filepath ** next = &paths;
+    struct filepath ** paths_next = &paths;
 
     if (argc != 2) {
         fprintf(stderr, "usage: %s [FILE]\n", (argc > 0 ? argv[0] : "progressbar"));
@@ -438,24 +479,24 @@ int main(int argc, char **argv)
             file_realpath[realpath_used] = '\0';
             if (realpath_used == target_filepath_len) {
                 if (!strncmp(argv[1], file_realpath, realpath_used)) {
-                    *next = (struct filepath *) calloc(1, sizeof(**next));
-                    if (!*next) {
+                    *paths_next = (struct filepath *) calloc(1, sizeof(**paths_next));
+                    if (!*paths_next) {
                         continue;
                     }
 
-                    if (snprintf((*next)->pid, sizeof (*next)->pid, "%s",
+                    if (snprintf((*paths_next)->pid, sizeof (*paths_next)->pid, "%s",
                                  proc_pid_entries.entries[i]->d_name) <= 0)
                     {
                         continue;
                     }
-                    if (snprintf((*next)->fd, sizeof (*next)->fd,
+                    if (snprintf((*paths_next)->fd, sizeof (*paths_next)->fd,
                                  "%s", proc_fd_entries.entries[j]->d_name) <= 0)
                     {
                         continue;
                     }
 
                     found_targets++;
-                    next = &(*next)->next;
+                    paths_next = &(*paths_next)->next;
                 }
             }
         }
@@ -470,30 +511,30 @@ int main(int argc, char **argv)
 
     if (found_targets == 1) {
         read_proc_cmdline(paths->cmdline, sizeof paths->cmdline, paths->pid);
-        printf("FD..: '/proc/%s/fd/%s' | CMD.: %s\n",
-               paths->pid, paths->fd, paths->cmdline);
+        printf_cmd_info(0, paths);
+        open_procfs_paths(paths);
     } else if (choose_filepath(paths)) {
         fprintf(stderr, "%s: user did not choose a valid filepath\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
-    int proc_fd_fd = open_in_procfs(paths->pid, paths->fd, PROC_SUBDIR_FD);
-    if (proc_fd_fd < 0) {
-        perror("open proc_fd");
-        exit(EXIT_FAILURE);
-    }
-
-    int proc_fdinfo_fd = open_in_procfs(paths->pid, paths->fd, PROC_SUBDIR_FDINFO);
-    if (proc_fdinfo_fd < 0) {
-        perror("open proc_fdinfo");
-        exit(EXIT_FAILURE);
-    }
-
     struct file_info finfo = {};
-    if (setup_file_info(&finfo, proc_fd_fd, proc_fdinfo_fd)) {
-        exit(EXIT_FAILURE);
+    struct filepath * next = paths;
+    while (next) {
+        struct filepath * const cur = next;
+        next = next->next;
+
+        if (!cur->wanted) {
+            continue;
+        }
+
+        if (setup_file_info(&finfo, cur->proc_fd_fd, cur->proc_fdinfo_fd)) {
+            exit(EXIT_FAILURE);
+        }
+
+        close(cur->proc_fd_fd);
+        cur->proc_fd_fd = -1;
     }
-    close(proc_fd_fd);
 
     while (!read_and_parse_fd_pos(&finfo)) {
         if (reset_terminal_output(&finfo) < 0) {
@@ -514,6 +555,10 @@ int main(int argc, char **argv)
         struct filepath * cur = paths;
         paths = paths->next;
 
+        if (cur->wanted) {
+            close(cur->proc_fdinfo_fd);
+            cur->proc_fdinfo_fd = -1;
+        }
         free(cur);
     }
 }
