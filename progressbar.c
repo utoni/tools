@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <time.h>
+#include <assert.h>
 
 #define MAX_CMDLINE_LEN 512
 #define MAX_TERMINAL_LEN 2048
@@ -29,6 +30,8 @@ static int search_dir(const char * const dir,
     struct dirent **names;
     int n;
 
+    assert(dir && filter_fn && entries);
+
     n = scandir(dir, &names, filter_fn, alphasort);
     if (n < 0) {
         return 1;
@@ -44,6 +47,8 @@ static int dirent_filter_only_numeric(const struct dirent * ent)
 {
     char * end_ptr;
 
+    assert(ent);
+
     errno = 0;
     strtoul(ent->d_name, &end_ptr, 10);
     return (errno != 0 || *end_ptr == '\0');
@@ -54,6 +59,8 @@ static int search_procfs_fd(const char * const dir, const char * const subdir,
 {
     char buf[BUFSIZ];
 
+    assert(dir && subdir && entries);
+
     snprintf(buf, sizeof buf, "%s/%s/fd", dir ,subdir);
     return search_dir(buf, dirent_filter_only_numeric, entries);
 }
@@ -63,12 +70,16 @@ static ssize_t realpath_procfs_fd(const char * const dir, const char * const pid
 {
     char buf[BUFSIZ];
 
+    assert(dir && pid && fd && dest && siz > 0);
+
     snprintf(buf, sizeof buf, "%s/%s/fd/%s", dir, pid, fd);
     return readlink(buf, dest, siz);
 }
 
 static void free_filtered_dir_entries(struct filtered_dir_entries * const entries)
 {
+    assert(entries);
+
     if (!entries->entries) {
         return;
     }
@@ -88,6 +99,8 @@ static int open_in_procfs(const char * const pid, const char * const fd, enum pr
 {
     char proc_path[BUFSIZ];
     const char * subdir_path = NULL;
+
+    assert(pid && fd);
 
     switch (type) {
         case PROC_SUBDIR_FD:
@@ -117,7 +130,6 @@ struct file_info {
     int proc_fdinfo_fd;
     long int current_position;
     long int max_size;
-    char cmdline[MAX_CMDLINE_LEN];
     struct {
         struct winsize dimensions;
         char output[MAX_TERMINAL_LEN];
@@ -129,6 +141,8 @@ struct file_info {
 static int setup_file_info(struct file_info * const finfo, int proc_fd_fd, int proc_fdinfo_fd)
 {
     struct stat buf;
+
+    assert(finfo && proc_fd_fd >= 0 && proc_fdinfo_fd >= 0);
 
     if (fstat(proc_fd_fd, &buf)) {
         perror("setup_file_info: fstat");
@@ -147,6 +161,8 @@ static int read_and_parse_fd_pos(struct file_info * const finfo)
     char proc_fdinfo[BUFSIZ];
     static const char needle[] = "pos:\t";
     char * pospos;
+
+    assert(finfo);
 
     if (lseek(finfo->proc_fdinfo_fd, 0, SEEK_SET) < 0) {
         return -1;
@@ -169,30 +185,35 @@ static int read_and_parse_fd_pos(struct file_info * const finfo)
     return 0;
 }
 
-static int read_proc_cmdline(struct file_info * const finfo,
+static int read_proc_cmdline(char * dest, size_t size,
                              const char * const proc_pid)
 {
     int cmdline_fd;
     char buf[MAX_CMDLINE_LEN];
 
+    assert(dest && size && proc_pid);
+
     if (snprintf(buf, sizeof buf, "%s/%s/cmdline",
                  "/proc", proc_pid) <= 0)
     {
-        finfo->cmdline[0] = '\0';
+        dest[0] = '\0';
         return -1;
     }
     cmdline_fd = open(buf, 0);
     if (read(cmdline_fd, buf, sizeof buf) <= 0)
     {
-        finfo->cmdline[0] = '\0';
+        dest[0] = '\0';
         return -1;
     }
+    close(cmdline_fd);
 
-    return snprintf(finfo->cmdline, sizeof finfo->cmdline, "%.*s (%s)", MAX_CMDLINE_LEN - 35, buf, proc_pid);
+    return snprintf(dest, size, "%.*s (%s)", MAX_CMDLINE_LEN - 35, buf, proc_pid);
 }
 
 static int reset_terminal_output(struct file_info * const finfo)
 {
+    assert(finfo);
+
     finfo->terminal.output[0] = '\r';
     finfo->terminal.output[1] = '\0';
     finfo->terminal.unprintable_chars = 1;
@@ -202,6 +223,8 @@ static int reset_terminal_output(struct file_info * const finfo)
 
 static size_t remaining_printable_chars(struct file_info * const finfo)
 {
+    assert(finfo);
+
     return finfo->terminal.dimensions.ws_col -
            strnlen(finfo->terminal.output, finfo->terminal.printable_chars);
 }
@@ -211,6 +234,8 @@ static int vadd_printable_buf(struct file_info * const finfo, const char * forma
     char tmp_buf[MAX_TERMINAL_LEN];
     int snprintf_retval;
     size_t remaining_len;
+
+    assert(finfo && format);
 
     remaining_len = remaining_printable_chars(finfo);
     if (!remaining_len) {
@@ -235,6 +260,8 @@ static int add_printable_buf(struct file_info * const finfo, const char * format
     int ret;
     va_list ap;
 
+    assert(finfo && format);
+
     va_start(ap, format);
     ret = vadd_printable_buf(finfo, format, ap);
     va_end(ap);
@@ -248,6 +275,8 @@ enum unit_suffix {
 static enum unit_suffix choose_appropriate_unit(long int bytes, float *result)
 {
     float pretty_bytes;
+
+    assert(result);
 
     pretty_bytes = (float)bytes / (1024.0f * 1024.0f * 1024.0f);
     if (pretty_bytes >= 1.0f) {
@@ -275,6 +304,8 @@ static void prettify_with_units(long int bytes, char * buf, size_t siz)
     float unit_bytes = 0.0f;
     enum unit_suffix up = choose_appropriate_unit(bytes, &unit_bytes);
 
+    assert(buf && siz > 0);
+
     switch (up) {
         case KILO:
             snprintf(buf, siz, "%.2fK", unit_bytes);
@@ -298,6 +329,8 @@ static void show_positions(struct file_info * const finfo)
     char curpos[66];
     char maxpos[66];
 
+    assert(finfo);
+
     prettify_with_units(finfo->current_position, curpos, sizeof curpos);
     prettify_with_units(finfo->max_size, maxpos, sizeof maxpos);
 
@@ -308,6 +341,8 @@ static void show_progressbar(struct file_info * const finfo)
 {
     char buf[BUFSIZ];
     size_t remaining_len;
+
+    assert(finfo);
 
     remaining_len = remaining_printable_chars(finfo);
     if (remaining_len < 8 || remaining_len >= sizeof buf) {
@@ -338,99 +373,17 @@ static int nsleep(unsigned long long int nanosecs)
     return nanosleep(&tim , NULL);
 }
 
-struct pid_file_tuple {
+struct filepath {
     char pid[32];
     char fd[32];
+    char cmdline[MAX_CMDLINE_LEN];
+    struct filepath * next;
 };
 
-static void iterate_pid_file(const char * const target_path, ssize_t target_filepath_len,
-                             int(*pdt_callback)(struct pid_file_tuple pdt, void * const user_ptr),
-                             void * const user_ptr)
+static int choose_filepath(struct filepath * const fp)
 {
-    struct filtered_dir_entries proc_pid_entries = {};
-    struct filtered_dir_entries proc_fd_entries = {};
-    ssize_t realpath_used;
-    char file_realpath[BUFSIZ] = {};
+    assert(fp);
 
-    if (search_dir("/proc", dirent_filter_only_numeric, &proc_pid_entries)) {
-        exit(EXIT_FAILURE);
-    }
-    for (size_t i = 0; i < proc_pid_entries.entries_num; ++i) {
-        if (search_procfs_fd("/proc", proc_pid_entries.entries[i]->d_name,
-                             &proc_fd_entries)) {
-            continue;
-        }
-
-        for (size_t j = 0; j < proc_fd_entries.entries_num; ++j) {
-            realpath_used = realpath_procfs_fd("/proc",
-                                proc_pid_entries.entries[i]->d_name,
-                                proc_fd_entries.entries[j]->d_name,
-                                &file_realpath[0], sizeof file_realpath);
-            if (realpath_used <= 0) {
-                continue;
-            }
-            file_realpath[realpath_used] = '\0';
-            if (realpath_used == target_filepath_len) {
-                if (!strncmp(target_path, file_realpath, realpath_used)) {
-                    struct pid_file_tuple pdt;
-                    if (snprintf(pdt.pid, sizeof pdt.pid, "%s", proc_pid_entries.entries[i]->d_name) <= 0) {
-                        continue;
-                    }
-                    if (snprintf(pdt.fd, sizeof pdt.fd, "%s", proc_fd_entries.entries[j]->d_name) <= 0) {
-                        continue;
-                    }
-                    if (pdt_callback(pdt, user_ptr)) {
-                        continue;
-                    }
-                }
-            }
-        }
-        free_filtered_dir_entries(&proc_fd_entries);
-    }
-    free_filtered_dir_entries(&proc_pid_entries);
-}
-
-#define PFT_INITIAL_SIZE 2
-struct pid_file_tuple_array {
-    size_t cur_size;
-    size_t max_size;
-    struct pid_file_tuple array[PFT_INITIAL_SIZE];
-};
-
-static int save_proc_entry_callback(struct pid_file_tuple pdt, struct pid_file_tuple_array ** const array)
-{
-    if (!array) {
-        return 1;
-    }
-
-    if (!*array || (*array)->cur_size == (*array)->max_size) {
-        size_t new_size = PFT_INITIAL_SIZE;
-        size_t cur_size = 0;
-
-        if (*array) {
-            new_size = (*array)->max_size * 2;
-            cur_size = (*array)->cur_size;
-        }
-        *array = (struct pid_file_tuple_array * ) realloc(*array, new_size * sizeof (*array)->array);
-        (*array)->max_size = new_size;
-        (*array)->cur_size = cur_size + 1;
-    }
-
-    if (!*array) {
-        return 1;
-    }
-
-    strncpy((*array)->array[(*array)->cur_size - 1].pid,
-            pdt.pid, sizeof (*array)->array[(*array)->cur_size - 1].pid);
-    strncpy((*array)->array[(*array)->cur_size - 1].fd,
-            pdt.fd, sizeof (*array)->array[(*array)->cur_size - 1].fd);
-
-    return 0;
-}
-
-static size_t collect_filepaths_from_procfs(struct pid_file_tuple_array ** const array)
-{
-    (void) array;
     return 0;
 }
 
@@ -438,12 +391,11 @@ int main(int argc, char **argv)
 {
     struct filtered_dir_entries proc_pid_entries = {};
     struct filtered_dir_entries proc_fd_entries = {};
-    ssize_t realpath_used;
     ssize_t target_filepath_len;
     char file_realpath[BUFSIZ] = {};
-    char pid[32];
-    char fd[32];
-    bool found_target = false;
+    size_t found_targets = 0;
+    struct filepath * paths = NULL;
+    struct filepath ** next = &paths;
 
     if (argc != 2) {
         fprintf(stderr, "usage: %s [FILE]\n", (argc > 0 ? argv[0] : "progressbar"));
@@ -461,47 +413,58 @@ int main(int argc, char **argv)
         }
 
         for (size_t j = 0; j < proc_fd_entries.entries_num; ++j) {
-            realpath_used = realpath_procfs_fd("/proc",
-                                proc_pid_entries.entries[i]->d_name,
-                                proc_fd_entries.entries[j]->d_name,
-                                &file_realpath[0], sizeof file_realpath);
+            size_t realpath_used = realpath_procfs_fd("/proc",
+                proc_pid_entries.entries[i]->d_name,
+                proc_fd_entries.entries[j]->d_name,
+                &file_realpath[0], sizeof file_realpath - 1);
             if (realpath_used <= 0) {
                 continue;
             }
             file_realpath[realpath_used] = '\0';
             if (realpath_used == target_filepath_len) {
                 if (!strncmp(argv[1], file_realpath, realpath_used)) {
-                    found_target = true;
-                    if (snprintf(pid, sizeof pid, "%s", proc_pid_entries.entries[i]->d_name) <= 0) {
-                        found_target = false;
+                    *next = calloc(1, sizeof(**next));
+                    if (!*next) {
+                        continue;
                     }
-                    if (snprintf(fd, sizeof fd, "%s", proc_fd_entries.entries[j]->d_name) <= 0) {
-                        found_target = false;
+
+                    if (snprintf((*next)->pid, sizeof (*next)->pid, "%s",
+                                 proc_pid_entries.entries[i]->d_name) <= 0)
+                    {
+                        continue;
                     }
-                    break;
+                    if (snprintf((*next)->fd, sizeof (*next)->fd,
+                                 "%s", proc_fd_entries.entries[j]->d_name) <= 0)
+                    {
+                        continue;
+                    }
+
+                    found_targets++;
+                    next = &(*next)->next;
                 }
             }
         }
         free_filtered_dir_entries(&proc_fd_entries);
-
-        if (found_target) {
-            break;
-        }
     }
     free_filtered_dir_entries(&proc_pid_entries);
 
-    if (!found_target) {
+    if (!found_targets) {
         fprintf(stderr, "%s: file '%s' not found in /proc\n", argv[0], argv[1]);
         exit(EXIT_FAILURE);
     }
 
-    int proc_fd_fd = open_in_procfs(pid, fd, PROC_SUBDIR_FD);
+    if (choose_filepath(paths)) {
+        fprintf(stderr, "%s: user did not choose a valid filepath\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    int proc_fd_fd = open_in_procfs(paths->pid, paths->fd, PROC_SUBDIR_FD);
     if (proc_fd_fd < 0) {
         perror("open proc_fd");
         exit(EXIT_FAILURE);
     }
 
-    int proc_fdinfo_fd = open_in_procfs(pid, fd, PROC_SUBDIR_FDINFO);
+    int proc_fdinfo_fd = open_in_procfs(paths->pid, paths->fd, PROC_SUBDIR_FDINFO);
     if (proc_fdinfo_fd < 0) {
         perror("open proc_fdinfo");
         exit(EXIT_FAILURE);
@@ -513,9 +476,9 @@ int main(int argc, char **argv)
     }
     close(proc_fd_fd);
 
-    read_proc_cmdline(&finfo, pid);
-    printf("FD..: '/proc/%s/fd/%s'\nFILE: '%.*s'\nCMD.: %s\n",
-           pid, fd, (int)realpath_used, file_realpath, finfo.cmdline);
+    read_proc_cmdline(paths->cmdline, sizeof paths->cmdline, paths->pid);
+    printf("FD..: '/proc/%s/fd/%s' | CMD.: %s\n",
+           paths->pid, paths->fd, paths->cmdline);
 
     while (!read_and_parse_fd_pos(&finfo)) {
         if (reset_terminal_output(&finfo) < 0) {
@@ -528,7 +491,14 @@ int main(int argc, char **argv)
         fflush(stdout);
         nsleep(150000000L);
     }
-    puts("\n");
+    puts("");
 
     close(finfo.proc_fdinfo_fd);
+
+    while (paths) {
+        struct filepath * cur = paths;
+        paths = paths->next;
+
+        free(cur);
+    }
 }
