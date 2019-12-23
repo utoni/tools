@@ -1,7 +1,10 @@
 CC := gcc
 INSTALL_DIR := install -d
 INSTALL_BIN := install -s
-CFLAGS := -O2 -g -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
+CFLAGS := -O2 -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
+ifneq ($(strip $(DEBUG)),)
+CFLAGS += -g
+endif
 LDFLAGS :=
 RM := rm -rf
 
@@ -83,6 +86,13 @@ install: $(TARGETS)
 	$(INSTALL_DIR) -d $(PREFIX)/usr/bin
 	$(INSTALL_BIN) -s $(TARGETS) $(PREFIX)/usr/bin
 
+help:
+	@echo '======================================'
+	@echo 'Possible ARGS:'
+	@echo '--------------'
+	@echo 'make MAKE_X11=y MAKE_NCURSES=y DEBUG=y'
+	@echo '======================================'
+
 rebuild: clean all
 
-.PHONY: all clean strip
+.PHONY: all clean strip help
