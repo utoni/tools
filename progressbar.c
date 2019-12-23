@@ -380,10 +380,25 @@ struct filepath {
     struct filepath * next;
 };
 
-static int choose_filepath(struct filepath * const fp)
+static int choose_filepath(struct filepath * fp)
 {
-    assert(fp);
+    size_t choice = 0, current = 0;
 
+    puts("Choose file to watch ..\n");
+    while (fp && ++current) {
+        struct filepath * cur = fp;
+        fp = fp->next;
+
+        read_proc_cmdline(cur->cmdline, sizeof cur->cmdline, cur->pid);
+        printf("[%zu] %s (%s) fd %s\n", current, cur->cmdline, cur->pid, cur->fd);
+    }
+
+    printf("\nYour choice: ");
+    if (scanf("%zu", &choice) != 1 || choice > current || !choice) {
+        return 1;
+    }
+
+    printf("_%zu_\n", choice);
     return 0;
 }
 
@@ -391,7 +406,7 @@ int main(int argc, char **argv)
 {
     struct filtered_dir_entries proc_pid_entries = {};
     struct filtered_dir_entries proc_fd_entries = {};
-    ssize_t target_filepath_len;
+    size_t target_filepath_len;
     char file_realpath[BUFSIZ] = {};
     size_t found_targets = 0;
     struct filepath * paths = NULL;
@@ -423,7 +438,7 @@ int main(int argc, char **argv)
             file_realpath[realpath_used] = '\0';
             if (realpath_used == target_filepath_len) {
                 if (!strncmp(argv[1], file_realpath, realpath_used)) {
-                    *next = calloc(1, sizeof(**next));
+                    *next = (struct filepath *) calloc(1, sizeof(**next));
                     if (!*next) {
                         continue;
                     }
@@ -453,7 +468,11 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    if (choose_filepath(paths)) {
+    if (found_targets == 1) {
+        read_proc_cmdline(paths->cmdline, sizeof paths->cmdline, paths->pid);
+        printf("FD..: '/proc/%s/fd/%s' | CMD.: %s\n",
+               paths->pid, paths->fd, paths->cmdline);
+    } else if (choose_filepath(paths)) {
         fprintf(stderr, "%s: user did not choose a valid filepath\n", argv[0]);
         exit(EXIT_FAILURE);
     }
@@ -475,10 +494,6 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
     close(proc_fd_fd);
-
-    read_proc_cmdline(paths->cmdline, sizeof paths->cmdline, paths->pid);
-    printf("FD..: '/proc/%s/fd/%s' | CMD.: %s\n",
-           paths->pid, paths->fd, paths->cmdline);
 
     while (!read_and_parse_fd_pos(&finfo)) {
         if (reset_terminal_output(&finfo) < 0) {
