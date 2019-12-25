@@ -24,10 +24,10 @@ struct filtered_dir_entries {
 
 
 static int search_dir(const char * const dir,
-                      int (*filter_fn)(const struct dirent *),
+                      int (*filter_fn)(struct dirent const * const),
                       struct filtered_dir_entries * const entries)
 {
-    struct dirent **names;
+    struct dirent ** names;
     int n;
 
     assert(dir && filter_fn && entries);
@@ -43,7 +43,7 @@ static int search_dir(const char * const dir,
     return 0;
 }
 
-static int dirent_filter_only_numeric(const struct dirent * ent)
+static int dirent_filter_only_numeric(struct dirent const * const ent)
 {
     char * end_ptr;
 
@@ -66,7 +66,7 @@ static int search_procfs_fd(const char * const dir, const char * const subdir,
 }
 
 static ssize_t realpath_procfs_fd(const char * const dir, const char * const pid,
-                                  const char * const fd, char * dest, size_t siz)
+                                  const char * const fd, char * const dest, size_t siz)
 {
     char buf[BUFSIZ];
 
@@ -185,7 +185,7 @@ static int read_and_parse_fd_pos(struct file_info * const finfo)
     return 0;
 }
 
-static void read_proc_cmdline(char * dest, size_t size,
+static void read_proc_cmdline(char * const dest, size_t size,
                              const char * const proc_pid)
 {
     int cmdline_fd;
@@ -233,7 +233,7 @@ static size_t remaining_printable_chars(struct file_info * const finfo)
            strnlen(finfo->terminal.output, finfo->terminal.printable_chars);
 }
 
-static int vadd_printable_buf(struct file_info * const finfo, const char * format, va_list ap)
+static int vadd_printable_buf(struct file_info * const finfo, const char * const format, va_list ap)
 {
     char tmp_buf[MAX_TERMINAL_LEN];
     int snprintf_retval;
@@ -259,7 +259,7 @@ static int vadd_printable_buf(struct file_info * const finfo, const char * forma
     return snprintf_retval;
 }
 
-static int add_printable_buf(struct file_info * const finfo, const char * format, ...)
+static int add_printable_buf(struct file_info * const finfo, const char * const format, ...)
 {
     int ret;
     va_list ap;
@@ -276,7 +276,7 @@ enum unit_suffix {
     NONE, KILO, MEGA, GIGA
 };
 
-static enum unit_suffix choose_appropriate_unit(long int bytes, float *result)
+static enum unit_suffix choose_appropriate_unit(long int bytes, float * const result)
 {
     float pretty_bytes;
 
@@ -303,7 +303,7 @@ static enum unit_suffix choose_appropriate_unit(long int bytes, float *result)
     return NONE;
 }
 
-static void prettify_with_units(long int bytes, char * buf, size_t siz)
+static void prettify_with_units(long int bytes, char * const buf, size_t siz)
 {
     float unit_bytes = 0.0f;
     enum unit_suffix up = choose_appropriate_unit(bytes, &unit_bytes);
@@ -421,7 +421,7 @@ static int choose_filepath(struct filepath * const filepath)
     puts("Choose file to watch ..\n");
     next = filepath;
     while (next && ++menu_index) {
-        struct filepath * cur = next;
+        struct filepath * const cur = next;
         next = next->next;
 
         read_proc_cmdline(cur->cmdline, sizeof cur->cmdline, cur->pid);
@@ -436,7 +436,7 @@ static int choose_filepath(struct filepath * const filepath)
     next = filepath;
     menu_index = 0;
     while (next && ++menu_index) {
-        struct filepath * cur = next;
+        struct filepath * const cur = next;
         next = next->next;
 
         if (menu_index == choice) {
@@ -447,7 +447,7 @@ static int choose_filepath(struct filepath * const filepath)
     return 0;
 }
 
-int main(int argc, char **argv)
+int main(int argc, char ** argv)
 {
     struct filtered_dir_entries proc_pid_entries = {};
     struct filtered_dir_entries proc_fd_entries = {};
