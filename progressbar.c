@@ -390,9 +390,9 @@ struct filepath {
 static void printf_cmd_info(size_t index, struct filepath const * const fp)
 {
     if (index) {
-        printf("[%zu]['/proc/%s/fd/%s'] '%s'\n", index, fp->pid, fp->fd, fp->cmdline);
+        printf("[%zu]['/proc/%s/fd/%s']['%s']\n", index, fp->pid, fp->fd, fp->cmdline);
     } else {
-        printf("['/proc/%s/fd/%s'] '%s'\n", fp->pid, fp->fd, fp->cmdline);
+        printf("['/proc/%s/fd/%s']['%s']\n", fp->pid, fp->fd, fp->cmdline);
     }
 }
 
@@ -552,8 +552,6 @@ int main(int argc, char **argv)
         nsleep(150000000L);
     }
     puts("");
-
-    close(finfo.proc_fdinfo_fd);
 
     while (paths) {
         struct filepath * cur = paths;
