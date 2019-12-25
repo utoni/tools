@@ -142,11 +142,14 @@ struct file_info {
         float last_reported_rate;
     } xfer_rate_history;
     struct {
-        struct winsize dimensions;
-        char output[MAX_TERMINAL_LEN];
+        char buf[MAX_TERMINAL_LEN];
         size_t printable_chars;
         size_t unprintable_chars;
-    } terminal;
+    } terminal_output;
+};
+
+struct terminal {
+    struct winsize dimensions;
 };
 
 static int setup_file_info(struct file_info * const finfo, int proc_fd_fd, int proc_fdinfo_fd)
@@ -226,26 +229,33 @@ static void read_proc_cmdline(char * const dest, size_t size,
     strncpy(dest, buf, size);
 }
 
-static int reset_terminal_output(struct file_info * const finfo)
+static void reset_terminal_output_buffer(struct file_info * const finfo)
 {
     assert(finfo);
 
-    finfo->terminal.output[0] = '\r';
-    finfo->terminal.output[1] = '\0';
-    finfo->terminal.unprintable_chars = 1;
-    finfo->terminal.printable_chars = 0;
-    return ioctl(0, TIOCGWINSZ, &finfo->terminal.dimensions);
+    finfo->terminal_output.buf[0] = '\r';
+    finfo->terminal_output.buf[1] = '\0';
+    finfo->terminal_output.unprintable_chars = 1;
+    finfo->terminal_output.printable_chars = 0;
 }
 
-static size_t remaining_printable_chars(struct file_info * const finfo)
+static int get_terminal_dimensions(struct terminal * const term)
 {
-    assert(finfo);
-
-    return finfo->terminal.dimensions.ws_col -
-           strnlen(finfo->terminal.output, finfo->terminal.printable_chars);
+    return ioctl(0, TIOCGWINSZ, &term->dimensions);
 }
 
-static int vadd_printable_buf(struct file_info * const finfo, const char * const format, va_list ap)
+static size_t remaining_printable_chars(struct terminal const * const term,
+                                        struct file_info const * const finfo)
+{
+    assert(term && finfo);
+
+    return term->dimensions.ws_col -
+           strnlen(finfo->terminal_output.buf, finfo->terminal_output.printable_chars);
+}
+
+static int vadd_printable_buf(struct terminal const * const term,
+                              struct file_info * const finfo,
+                              const char * const format, va_list ap)
 {
     char tmp_buf[MAX_TERMINAL_LEN];
     int snprintf_retval;
@@ -253,25 +263,28 @@ static int vadd_printable_buf(struct file_info * const finfo, const char * const
 
     assert(finfo && format);
 
-    remaining_len = remaining_printable_chars(finfo);
+    remaining_len = remaining_printable_chars(term, finfo);
     if (!remaining_len) {
         return -1;
     }
 
     snprintf_retval = vsnprintf(tmp_buf,  sizeof tmp_buf, format, ap);
     if (snprintf_retval > 0) {
-        if ((size_t)snprintf_retval > remaining_len) {
+        size_t buf_len = snprintf_retval;
+        if (buf_len > remaining_len) {
             return -1;
         }
-        memcpy(finfo->terminal.output + finfo->terminal.printable_chars +
-               finfo->terminal.unprintable_chars,
-               tmp_buf, snprintf_retval);
-        finfo->terminal.printable_chars += snprintf_retval;
+        memcpy(finfo->terminal_output.buf + finfo->terminal_output.printable_chars +
+               finfo->terminal_output.unprintable_chars,
+               tmp_buf, buf_len);
+        finfo->terminal_output.printable_chars += snprintf_retval;
     }
     return snprintf_retval;
 }
 
-static int add_printable_buf(struct file_info * const finfo, const char * const format, ...)
+static int add_printable_buf(struct terminal const * const term,
+                             struct file_info * const finfo,
+                             const char * const format, ...)
 {
     int ret;
     va_list ap;
@@ -279,7 +292,7 @@ static int add_printable_buf(struct file_info * const finfo, const char * const 
     assert(finfo && format);
 
     va_start(ap, format);
-    ret = vadd_printable_buf(finfo, format, ap);
+    ret = vadd_printable_buf(term, finfo, format, ap);
     va_end(ap);
     return ret;
 }
@@ -340,7 +353,8 @@ static void prettify_with_units(long int bytes, char * const buf, size_t siz)
     }
 }
 
-static void show_positions(struct file_info * const finfo)
+static void show_positions(struct terminal * const term,
+                           struct file_info * const finfo)
 {
     char curpos[64];
     char maxpos[64];
@@ -350,7 +364,7 @@ static void show_positions(struct file_info * const finfo)
     prettify_with_units(finfo->current_position, curpos, sizeof curpos);
     prettify_with_units(finfo->max_size, maxpos, sizeof maxpos);
 
-    add_printable_buf(finfo, "[%s/%s]", curpos, maxpos);
+    add_printable_buf(term, finfo, "[%s/%s]", curpos, maxpos);
 }
 
 static void measure_realtime(struct timespec * const tp)
@@ -372,7 +386,8 @@ static void loop_end(struct file_info * const finfo)
 }
 
 #define NANO_CONVERSION_F ((float)(1000.0f * 1000.0f * 1000.0f))
-static void show_rate(struct file_info * const finfo)
+static void show_rate(struct terminal * const term,
+                      struct file_info * const finfo)
 {
     char out[64];
     size_t xfer_rate_index;
@@ -419,25 +434,26 @@ static void show_rate(struct file_info * const finfo)
 
     /* print it to the output buffer after "prettified" and units appended */
     prettify_with_units(finfo->xfer_rate_history.last_reported_rate, out, sizeof out);
-    add_printable_buf(finfo, "[%s/s]", out);
+    add_printable_buf(term, finfo, "[%s/s]", out);
 }
 
-static void show_progressbar(struct file_info * const finfo)
+static void show_progressbar(struct terminal const * const term,
+                             struct file_info * const finfo)
 {
     char buf[BUFSIZ];
     size_t remaining_len;
 
     assert(finfo);
 
-    remaining_len = remaining_printable_chars(finfo);
-    if (remaining_len < 8 || remaining_len >= sizeof buf) {
+    remaining_len = remaining_printable_chars(term, finfo);
+    if (remaining_len < 16 || remaining_len >= sizeof buf) {
         return;
     }
 
     float progress = (float)finfo->current_position / finfo->max_size;
-    add_printable_buf(finfo, "[%.2f%%]", progress * 100.0f);
+    add_printable_buf(term, finfo, "[%.2f%%]", progress * 100.0f);
 
-    remaining_len = remaining_printable_chars(finfo);
+    remaining_len = remaining_printable_chars(term, finfo);
     if (remaining_len < 3 || remaining_len >= sizeof buf) {
         return;
     }
@@ -446,7 +462,7 @@ static void show_progressbar(struct file_info * const finfo)
     memset(buf, '-', remaining_len - 2);
     memset(buf, '#', (size_t)printable_progress);
     buf[remaining_len - 2] = '\0';
-    add_printable_buf(finfo, "[%s]", buf);
+    add_printable_buf(term, finfo, "[%s]", buf);
 }
 
 static int nsleep(unsigned long long int nanosecs)
@@ -621,19 +637,21 @@ int main(int argc, char ** argv)
         cur->proc_fd_fd = -1;
     }
 
+    struct terminal term = {};
     loop_start(&finfo);
     while (!read_and_parse_fd_pos(&finfo)) {
-        if (reset_terminal_output(&finfo) < 0) {
-            break;
-        }
+        reset_terminal_output_buffer(&finfo);
+        get_terminal_dimensions(&term);
 
         loop_end(&finfo);
-        show_positions(&finfo);
-        show_rate(&finfo);
-        show_progressbar(&finfo);
+        show_positions(&term, &finfo);
+        show_rate(&term, &finfo);
+        show_progressbar(&term, &finfo);
         loop_start(&finfo);
 
-        printf("%s", finfo.terminal.output);
+        int print_len = finfo.terminal_output.printable_chars +
+                        finfo.terminal_output.unprintable_chars;
+        printf("%.*s", print_len, finfo.terminal_output.buf);
         fflush(stdout);
         nsleep(150000000L);
     }
