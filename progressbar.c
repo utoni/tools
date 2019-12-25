@@ -139,6 +139,7 @@ struct file_info {
     struct {
         float xfer_rates[32];
         size_t next_index;
+        float last_reported_rate;
     } xfer_rate_history;
     struct {
         struct winsize dimensions;
@@ -349,7 +350,7 @@ static void show_positions(struct file_info * const finfo)
     prettify_with_units(finfo->current_position, curpos, sizeof curpos);
     prettify_with_units(finfo->max_size, maxpos, sizeof maxpos);
 
-    add_printable_buf(finfo, "[%s / %s]", curpos, maxpos);
+    add_printable_buf(finfo, "[%s/%s]", curpos, maxpos);
 }
 
 static void measure_realtime(struct timespec * const tp)
@@ -409,8 +410,15 @@ static void show_rate(struct file_info * const finfo)
     /* update history */
     finfo->xfer_rate_history.xfer_rates[xfer_rate_index % XFER_RATES_LENGTH] = new_xfer_rate;
 
+    /* do not show every updated rate; can be very annoying if values are changing e.g. between 10.0 and 9.0 */
+    if (finfo->xfer_rate_history.next_index - 1 < XFER_RATES_LENGTH ||
+        (finfo->xfer_rate_history.next_index - 1) % (XFER_RATES_LENGTH / 2) == 0)
+    {
+        finfo->xfer_rate_history.last_reported_rate = result;
+    }
+
     /* print it to the output buffer after "prettified" and units appended */
-    prettify_with_units(result, out, sizeof out);
+    prettify_with_units(finfo->xfer_rate_history.last_reported_rate, out, sizeof out);
     add_printable_buf(finfo, "[%s/s]", out);
 }
 
