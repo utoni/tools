@@ -1,9 +1,14 @@
 CC := gcc
 INSTALL_DIR := install -d
 INSTALL_BIN := install -s
-CFLAGS := -O2 -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
+CFLAGS := -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
 ifneq ($(strip $(DEBUG)),)
-CFLAGS += -g
+CFLAGS += -Og -g
+ifneq ($(strip $(DEBUG_ASAN)),)
+CFLAGS += -fsanitize=address -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize=undefined
+endif
+else
+CFLAGS += -O2
 endif
 LDFLAGS :=
 RM := rm -rf
@@ -29,47 +34,65 @@ all: $(TARGETS)
 
 
 aes: aes.o
+	@echo 'Building target: $@'
+	@echo 'Invoking: GCC C Linker'
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<"
+	@echo 'Finished building target: $@'
+	@echo ' '
+
 asciihexer: asciihexer.o
+	@echo 'Building target: $@'
+	@echo 'Invoking: GCC C Linker'
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<"
+	@echo 'Finished building target: $@'
+	@echo ' '
+
 dummyshell: dummyshell.o
+	@echo 'Building target: $@'
+	@echo 'Invoking: GCC C Linker'
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<"
+	@echo 'Finished building target: $@'
+	@echo ' '
+
 suidcmd: suidcmd.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	$(CC) $(LDFLAGS)  -o "$@" "$<"
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<"
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 ascii85: ascii85.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	$(CC) $(LDFLAGS)  -o "$@" "$<" -lm
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<" -lm
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 gol: gol.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	$(CC) $(LDFLAGS)  -o "$@" "$<" -lncurses
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<" -lncurses
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 xidle: xidle.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	$(CC) $(LDFLAGS)  -o "$@" "$<" -lX11 -lXext -lXss
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<" -lX11 -lXext -lXss
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 xdiff: xdiff.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	$(CC) $(LDFLAGS)  -o "$@" "$<" -lX11
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<" -lX11
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 progressbar: progressbar.o
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	$(CC) $(LDFLAGS)  -o "$@" "$<"
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o "$@" "$<"
 	@echo 'Finished building target: $@'
 	@echo ' '
 
