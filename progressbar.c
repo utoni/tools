@@ -126,6 +126,9 @@ static int open_in_procfs(const char * const pid, const char * const fd, enum pr
     return proc_fd;
 }
 
+#define XFER_RATES_LENGTH \
+    (sizeof( ((struct file_info *)0)->xfer_rate_history.xfer_rates ) \
+    / sizeof( ((struct file_info *)0)->xfer_rate_history.xfer_rates[0]) )
 struct file_info {
     int proc_fdinfo_fd;
     long int current_position;
@@ -133,6 +136,10 @@ struct file_info {
     long int max_size;
     struct timespec loop_start;
     struct timespec loop_end;
+    struct {
+        float xfer_rates[32];
+        size_t next_index;
+    } xfer_rate_history;
     struct {
         struct winsize dimensions;
         char output[MAX_TERMINAL_LEN];
@@ -367,6 +374,8 @@ static void loop_end(struct file_info * const finfo)
 static void show_rate(struct file_info * const finfo)
 {
     char out[64];
+    size_t xfer_rate_index;
+    float new_xfer_rate;
     float diff_pos;
     float result = 0.0f;
 
@@ -374,15 +383,33 @@ static void show_rate(struct file_info * const finfo)
     diff_pos = finfo->current_position - finfo->last_position;
 
     if (diff_pos > 0.0f) {
-        float diff_time_sec = finfo->loop_end.tv_sec - finfo->loop_start.tv_sec;
-        float diff_time_nsec = finfo->loop_end.tv_nsec - finfo->loop_start.tv_nsec;
+        /* calculate diff between last loop-end and loop-start for seconds and nano-seconds */
+        time_t diff_time_sec = finfo->loop_end.tv_sec - finfo->loop_start.tv_sec;
+        long diff_time_nsec = finfo->loop_end.tv_nsec - finfo->loop_start.tv_nsec;
+        float diff_time_all = diff_time_sec + (diff_time_nsec / NANO_CONVERSION_F);
 
-        if (diff_time_sec > 0.0f || diff_time_nsec > 0.0f) {
+        /* prevent division-by-zero and unreliable rates */
+        if (diff_time_all >= 0.01f) {
+            /* calculate current xfer rate */
             result = diff_pos;
-            result /= diff_time_sec + (diff_time_nsec / NANO_CONVERSION_F);
+            result /= diff_time_all;
         }
     }
 
+    /* save current rate before calculating the average */
+    xfer_rate_index = finfo->xfer_rate_history.next_index++;
+    new_xfer_rate = result;
+
+    /* calculate average xfer rate using values from the past */
+    for (size_t index = 0; index < XFER_RATES_LENGTH; ++index) {
+        result += finfo->xfer_rate_history.xfer_rates[index];
+    }
+    result /= XFER_RATES_LENGTH + 1;
+
+    /* update history */
+    finfo->xfer_rate_history.xfer_rates[xfer_rate_index % XFER_RATES_LENGTH] = new_xfer_rate;
+
+    /* print it to the output buffer after "prettified" and units appended */
     prettify_with_units(result, out, sizeof out);
     add_printable_buf(finfo, "[%s/s]", out);
 }
