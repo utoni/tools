@@ -129,7 +129,10 @@ static int open_in_procfs(const char * const pid, const char * const fd, enum pr
 struct file_info {
     int proc_fdinfo_fd;
     long int current_position;
+    long int last_position;
     long int max_size;
+    struct timespec loop_start;
+    struct timespec loop_end;
     struct {
         struct winsize dimensions;
         char output[MAX_TERMINAL_LEN];
@@ -180,6 +183,7 @@ static int read_and_parse_fd_pos(struct file_info * const finfo)
     }
     pospos += (sizeof(needle) - 1) / sizeof(needle[0]);
 
+    finfo->last_position = finfo->current_position;
     finfo->current_position = strtoul(pospos, NULL, 10);
 
     return 0;
@@ -306,39 +310,81 @@ static enum unit_suffix choose_appropriate_unit(long int bytes, float * const re
 static void prettify_with_units(long int bytes, char * const buf, size_t siz)
 {
     float unit_bytes = 0.0f;
-    enum unit_suffix up = choose_appropriate_unit(bytes, &unit_bytes);
+    enum unit_suffix us = choose_appropriate_unit(bytes, &unit_bytes);
 
     assert(buf && siz > 0);
 
-    switch (up) {
+    switch (us) {
         case KILO:
-            snprintf(buf, siz, "%.2fK", unit_bytes);
+            snprintf(buf, siz, "%.2fKb", unit_bytes);
             break;
         case MEGA:
-            snprintf(buf, siz, "%.2fM", unit_bytes);
+            snprintf(buf, siz, "%.2fMb", unit_bytes);
             break;
         case GIGA:
-            snprintf(buf, siz, "%.2fG", unit_bytes);
+            snprintf(buf, siz, "%.2fGb", unit_bytes);
             break;
 
         case NONE:
         default:
-            snprintf(buf, siz, "%ld", bytes);
+            snprintf(buf, siz, "%ldb", bytes);
             break;
     }
 }
 
 static void show_positions(struct file_info * const finfo)
 {
-    char curpos[66];
-    char maxpos[66];
+    char curpos[64];
+    char maxpos[64];
 
     assert(finfo);
 
     prettify_with_units(finfo->current_position, curpos, sizeof curpos);
     prettify_with_units(finfo->max_size, maxpos, sizeof maxpos);
 
-    add_printable_buf(finfo, "[%s..%s]", curpos, maxpos);
+    add_printable_buf(finfo, "[%s / %s]", curpos, maxpos);
+}
+
+static void measure_realtime(struct timespec * const tp)
+{
+    if (clock_gettime(CLOCK_REALTIME, tp)) {
+        perror("clock_gettime");
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void loop_start(struct file_info * const finfo)
+{
+    measure_realtime(&finfo->loop_start);
+}
+
+static void loop_end(struct file_info * const finfo)
+{
+    measure_realtime(&finfo->loop_end);
+}
+
+#define NANO_CONVERSION_F ((float)(1000.0f * 1000.0f * 1000.0f))
+static void show_rate(struct file_info * const finfo)
+{
+    char out[64];
+    float diff_pos;
+    float result = 0.0f;
+
+    assert(finfo);
+    diff_pos = finfo->current_position - finfo->last_position;
+
+    if (diff_pos > 0.0f) {
+        float diff_time_sec = finfo->loop_end.tv_sec - finfo->loop_start.tv_sec;
+        float diff_time_nsec = finfo->loop_end.tv_nsec - finfo->loop_start.tv_nsec;
+
+        if (diff_time_sec > 0.0f || diff_time_nsec > 0.0f) {
+            result = diff_pos;
+            result /= diff_time_sec + (diff_time_nsec / NANO_CONVERSION_F);
+        }
+    }
+
+    prettify_with_units(result, out, sizeof out);
+    add_printable_buf(finfo, "[%s/s]", out);
 }
 
 static void show_progressbar(struct file_info * const finfo)
@@ -540,12 +586,17 @@ int main(int argc, char ** argv)
         cur->proc_fd_fd = -1;
     }
 
+    loop_start(&finfo);
     while (!read_and_parse_fd_pos(&finfo)) {
         if (reset_terminal_output(&finfo) < 0) {
             break;
         }
+
+        loop_end(&finfo);
         show_positions(&finfo);
+        show_rate(&finfo);
         show_progressbar(&finfo);
+        loop_start(&finfo);
 
         printf("%s", finfo.terminal.output);
         fflush(stdout);
