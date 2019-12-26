@@ -262,7 +262,7 @@ static int vadd_printable_buf(struct terminal const * const term,
 {
     char tmp_buf[MAX_TERMINAL_LEN];
     int snprintf_retval;
-    size_t remaining_len;
+    size_t remaining_len, total_len;
 
     assert(finfo && format);
 
@@ -271,16 +271,20 @@ static int vadd_printable_buf(struct terminal const * const term,
         return -1;
     }
 
+    total_len = finfo->terminal_output.printable_chars +
+                finfo->terminal_output.unprintable_chars;
+
     snprintf_retval = vsnprintf(tmp_buf,  sizeof tmp_buf, format, ap);
     if (snprintf_retval > 0) {
         size_t buf_len = snprintf_retval;
-        if (buf_len > remaining_len) {
+        if (buf_len > remaining_len ||
+            buf_len + total_len + 1 > sizeof finfo->terminal_output.buf)
+        {
             return -1;
         }
-        memcpy(finfo->terminal_output.buf + finfo->terminal_output.printable_chars +
-               finfo->terminal_output.unprintable_chars,
-               tmp_buf, buf_len);
+        memcpy(finfo->terminal_output.buf + total_len, tmp_buf, buf_len);
         finfo->terminal_output.printable_chars += snprintf_retval;
+        finfo->terminal_output.buf[total_len + buf_len] = '\0';
     }
     return snprintf_retval;
 }
@@ -689,6 +693,13 @@ int main(int argc, char ** argv)
 
         int print_len = finfo.terminal_output.printable_chars +
                         finfo.terminal_output.unprintable_chars;
+
+        assert(print_len + 1 <= sizeof finfo.terminal_output.buf);
+        assert(finfo.terminal_output.buf[print_len] == '\0');
+        assert(print_len == strlen(finfo.terminal_output.buf));
+        assert(finfo.terminal_output.buf[0] == '\r' ||
+               finfo.terminal_output.buf[0] == '\n');
+
         printf("%.*s", print_len, finfo.terminal_output.buf);
         fflush(stdout);
         nsleep(150000000L);
