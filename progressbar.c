@@ -383,9 +383,13 @@ static void show_positions(struct terminal * const term,
     assert(finfo);
 
     prettify_with_units(finfo->current_position, curpos, sizeof curpos);
-    prettify_with_units(finfo->max_size, maxpos, sizeof maxpos);
-
-    add_printable_buf(term, finfo, "[%s/%s]", curpos, maxpos);
+    /* if the user is currently writing/appending to a file, show only current offset */
+    if (finfo->current_position <= finfo->max_size) {
+        prettify_with_units(finfo->max_size, maxpos, sizeof maxpos);
+        add_printable_buf(term, finfo, "[%s/%s]", curpos, maxpos);
+    } else {
+        add_printable_buf(term, finfo, "[%s WRITTEN]", curpos);
+    }
 }
 
 static void measure_realtime(struct timespec * const tp)
@@ -468,6 +472,10 @@ static void show_progressbar(struct terminal const * const term,
 
     remaining_len = remaining_printable_chars(term, finfo);
     if (remaining_len < 16 || remaining_len >= sizeof buf) {
+        return;
+    }
+    /* do not show progressbar if someone writes/appendes to this file */
+    if (finfo->current_position > finfo->max_size) {
         return;
     }
 
