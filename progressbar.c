@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include <errno.h>
+#include <signal.h>
 #include <string.h>
 #include <stdbool.h>
 #include <fcntl.h>
@@ -150,7 +151,9 @@ struct file_info {
 
 struct terminal {
     struct winsize dimensions;
+    int dimensions_changed;
 };
+static struct terminal term = {};
 
 static int setup_file_info(struct file_info * const finfo, int proc_fd_fd, int proc_fdinfo_fd)
 {
@@ -328,6 +331,20 @@ static enum unit_suffix choose_appropriate_unit(long int bytes, float * const re
     return NONE;
 }
 
+static void fillup_remaining(struct terminal const * const term,
+                             struct file_info * const finfo)
+{
+    size_t remaining_len = remaining_printable_chars(term, finfo);
+
+    if (remaining_len) {
+        char spaces[remaining_len + 1];
+
+        memset(spaces, ' ', sizeof(spaces));
+        spaces[remaining_len] = '\0';
+        add_printable_buf(term, finfo, "%s", spaces);
+    }
+}
+
 static void prettify_with_units(long int bytes, char * const buf, size_t siz)
 {
     float unit_bytes = 0.0f;
@@ -426,7 +443,7 @@ static void show_rate(struct terminal * const term,
     finfo->xfer_rate_history.xfer_rates[xfer_rate_index % XFER_RATES_LENGTH] = new_xfer_rate;
 
     /* do not show every updated rate; can be very annoying if values are changing e.g. between 10.0 and 9.0 */
-    if (finfo->xfer_rate_history.next_index - 1 < XFER_RATES_LENGTH ||
+    if (finfo->xfer_rate_history.next_index - 1 < XFER_RATES_LENGTH /* except right after startup */ ||
         (finfo->xfer_rate_history.next_index - 1) % (XFER_RATES_LENGTH / 2) == 0)
     {
         finfo->xfer_rate_history.last_reported_rate = result;
@@ -544,6 +561,18 @@ static int choose_filepath(struct filepath * const filepath)
     return 0;
 }
 
+void signal_handler(int signo)
+{
+    switch (signo) {
+        case SIGWINCH:
+            get_terminal_dimensions(&term);
+            term.dimensions_changed = 1;
+            break;
+        default:
+            break;
+    }
+}
+
 int main(int argc, char ** argv)
 {
     struct filtered_dir_entries proc_pid_entries = {};
@@ -637,16 +666,25 @@ int main(int argc, char ** argv)
         cur->proc_fd_fd = -1;
     }
 
-    struct terminal term = {};
+    get_terminal_dimensions(&term);
+    if (signal(SIGWINCH, signal_handler) == SIG_ERR) {
+        perror("signal");
+        exit(EXIT_FAILURE);
+    }
+
     loop_start(&finfo);
     while (!read_and_parse_fd_pos(&finfo)) {
         reset_terminal_output_buffer(&finfo);
-        get_terminal_dimensions(&term);
+        if (term.dimensions_changed) {
+            term.dimensions_changed = 0;
+            finfo.terminal_output.buf[0] = '\n';
+        }
 
         loop_end(&finfo);
         show_positions(&term, &finfo);
         show_rate(&term, &finfo);
         show_progressbar(&term, &finfo);
+        fillup_remaining(&term, &finfo);
         loop_start(&finfo);
 
         int print_len = finfo.terminal_output.printable_chars +
