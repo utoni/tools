@@ -475,11 +475,8 @@ static void show_progressbar(struct terminal const * const term,
     add_printable_buf(term, finfo, "[%.2f%%]", progress * 100.0f);
 
     remaining_len = remaining_printable_chars(term, finfo);
-    if (remaining_len < 3 || remaining_len >= sizeof buf) {
-        return;
-    }
 
-    float printable_progress = progress * remaining_len;
+    float printable_progress = progress * (remaining_len - 2);
     memset(buf, '-', remaining_len - 2);
     memset(buf, '#', (size_t)printable_progress);
     buf[remaining_len - 2] = '\0';
