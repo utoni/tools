@@ -699,15 +699,33 @@ int main(int argc, char ** argv)
         int print_len = finfo.terminal_output.printable_chars +
                         finfo.terminal_output.unprintable_chars;
 
-        assert(print_len + 1 <= sizeof finfo.terminal_output.buf);
+        assert(print_len + 1 <= (int)sizeof(finfo.terminal_output.buf));
         assert(finfo.terminal_output.buf[print_len] == '\0');
-        assert(print_len == strlen(finfo.terminal_output.buf));
+        assert(print_len == (int)strlen(finfo.terminal_output.buf));
         assert(finfo.terminal_output.buf[0] == '\r' ||
                finfo.terminal_output.buf[0] == '\n');
 
         printf("%.*s", print_len, finfo.terminal_output.buf);
         fflush(stdout);
         nsleep(150000000L);
+    }
+    /* Program exited!? We do not know if the file was fully read/written. Tell the user. */
+    if (finfo.current_position < finfo.max_size) {
+        reset_terminal_output_buffer(&finfo);
+        if (term.dimensions_changed) {
+            term.dimensions_changed = 0;
+            finfo.terminal_output.buf[0] = '\n';
+        }
+
+        show_positions(&term, &finfo);
+        show_rate(&term, &finfo);
+        add_printable_buf(&term, &finfo, "[%s]", "PROGRAM EXITED!");
+        show_progressbar(&term, &finfo);
+        fillup_remaining(&term, &finfo);
+        int print_len = finfo.terminal_output.printable_chars +
+                        finfo.terminal_output.unprintable_chars;
+        printf("%.*s", print_len, finfo.terminal_output.buf);
+        fflush(stdout);
     }
     puts("");
 
