@@ -15,7 +15,7 @@
 #include <assert.h>
 
 #define MAX_CMDLINE_LEN 512
-#define MAX_TERMINAL_LEN 2048
+#define MAX_TERMINAL_WIDTH 2048
 
 
 struct filtered_dir_entries {
@@ -143,7 +143,7 @@ struct file_info {
         float last_reported_rate;
     } xfer_rate_history;
     struct {
-        char buf[MAX_TERMINAL_LEN];
+        char buf[MAX_TERMINAL_WIDTH];
         size_t printable_chars;
         size_t unprintable_chars;
     } terminal_output;
@@ -260,7 +260,7 @@ static int vadd_printable_buf(struct terminal const * const term,
                               struct file_info * const finfo,
                               const char * const format, va_list ap)
 {
-    char tmp_buf[MAX_TERMINAL_LEN];
+    char tmp_buf[MAX_TERMINAL_WIDTH];
     int snprintf_retval;
     size_t remaining_len, total_len;
 
