@@ -41,11 +41,10 @@ typedef struct {
  
 void aes_init();
 aes_ctx_t *aes_alloc_ctx(unsigned char *key, size_t keyLen);
-inline unsigned long aes_subword(unsigned long w);
-inline unsigned long aes_rotword(unsigned long w);
+unsigned long aes_subword(unsigned long w);
+unsigned long aes_rotword(unsigned long w);
 void aes_keyexpansion(aes_ctx_t *ctx);
- 
-inline unsigned char aes_mul_manual(unsigned char a, unsigned char b); // use aes_mul instead
+unsigned char aes_mul_manual(unsigned char a, unsigned char b); // use aes_mul instead
  
 void aes_subbytes(aes_ctx_t *ctx);
 void aes_shiftrows(aes_ctx_t *ctx);
@@ -204,7 +203,7 @@ aes_ctx_t *aes_alloc_ctx(unsigned char *key, size_t keyLen)
     return ctx;
 }
  
-inline unsigned long aes_subword(unsigned long w)
+unsigned long aes_subword(unsigned long w)
 {
     return g_aes_sbox[w & 0x000000ff] |
         (g_aes_sbox[(w & 0x0000ff00) >> 8] << 8) |
@@ -212,7 +211,7 @@ inline unsigned long aes_subword(unsigned long w)
         (g_aes_sbox[(w & 0xff000000) >> 24] << 24);
 }
  
-inline unsigned long aes_rotword(unsigned long w)
+unsigned long aes_rotword(unsigned long w)
 {
     // May seem a bit different from the spec
     // It was changed because unsigned long is represented with little-endian convention on x86
@@ -241,7 +240,7 @@ void aes_keyexpansion(aes_ctx_t *ctx)
     }
 }
  
-inline unsigned char aes_mul_manual(unsigned char a, unsigned char b)
+unsigned char aes_mul_manual(unsigned char a, unsigned char b)
 {
     register unsigned short ac;
     register unsigned char ret;

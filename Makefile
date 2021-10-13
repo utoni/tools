@@ -3,7 +3,7 @@ INSTALL_DIR := install -d
 INSTALL_BIN := install -s
 CFLAGS := -Wall -ffunction-sections -fdata-sections -ffast-math -fomit-frame-pointer -fexpensive-optimizations -Wl,--gc-sections
 ifneq ($(strip $(DEBUG)),)
-CFLAGS += -Og -g
+CFLAGS += -Og -g3
 ifneq ($(strip $(DEBUG_ASAN)),)
 CFLAGS += -fsanitize=address -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize=undefined
 endif

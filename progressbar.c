@@ -169,6 +169,12 @@ static int setup_file_info(struct file_info * const finfo, int proc_fd_fd, int p
     finfo->proc_fdinfo_fd = proc_fdinfo_fd;
     finfo->current_position = 0;
     finfo->max_size = buf.st_size;
+
+    if (finfo->max_size == 0) {
+        fprintf(stderr, "setup_file_info: fd does not have any max size, probably a special file\n");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -475,7 +481,7 @@ static void show_progressbar(struct terminal const * const term,
         return;
     }
     /* do not show progressbar if someone writes/appendes to this file */
-    if (finfo->current_position > finfo->max_size) {
+    if (finfo->max_size == 0 || finfo->current_position > finfo->max_size) {
         return;
     }
 
@@ -484,7 +490,7 @@ static void show_progressbar(struct terminal const * const term,
 
     remaining_len = remaining_printable_chars(term, finfo);
 
-    float printable_progress = progress * (remaining_len - 2);
+    float printable_progress = progress * (remaining_len - 2.);
     memset(buf, '-', remaining_len - 2);
     memset(buf, '#', (size_t)printable_progress);
     buf[remaining_len - 2] = '\0';
@@ -586,7 +592,7 @@ int main(int argc, char ** argv)
 {
     struct filtered_dir_entries proc_pid_entries = {};
     struct filtered_dir_entries proc_fd_entries = {};
-    size_t target_filepath_len;
+    ssize_t target_filepath_len;
     char file_realpath[BUFSIZ] = {};
     size_t found_targets = 0;
     struct filepath * paths = NULL;
@@ -608,7 +614,7 @@ int main(int argc, char ** argv)
         }
 
         for (size_t j = 0; j < proc_fd_entries.entries_num; ++j) {
-            size_t realpath_used = realpath_procfs_fd("/proc",
+            ssize_t realpath_used = realpath_procfs_fd("/proc",
                 proc_pid_entries.entries[i]->d_name,
                 proc_fd_entries.entries[j]->d_name,
                 &file_realpath[0], sizeof file_realpath - 1);
